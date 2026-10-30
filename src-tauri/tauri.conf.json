@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PDF 查看器",
+  "mainBinaryName": "pdf-viewer",
+  "version": "1.1.0",
+  "identifier": "com.siiocc.pdfviewer",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost blob: data:; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "publisher": "siiocc",
+    "copyright": "Copyright © 2026 Riyel-Sinix（MIT 许可证）；插图：William Blake《天真与经验之歌》Copy Z，公有领域",
+    "shortDescription": "PDF 查看器",
+    "longDescription": "布莱克《天真与经验之歌》插画风格的 PDF 查看器：阅读、查找、打印，批注、签名、整理页面，合并 PDF。",
+    "fileAssociations": [
+      { "ext": ["pdf"], "name": "PDF", "description": "PDF 文档", "role": "Viewer", "mimeType": "application/pdf" }
+    ],
+    "windows": {
+      "nsis": {
+        "languages": ["SimpChinese"],
+        "displayLanguageSelector": false,
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

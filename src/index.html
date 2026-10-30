@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF 查看器</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/icon-64.png">
+<script src="js/boot.js"></script>
+<link rel="preload" href="assets/fonts/wk-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="resource" type="application/l10n" href="vendor/pdfjs/locale/locale.json">
+<link rel="stylesheet" href="vendor/pdfjs/pdf_viewer.css">
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/main.js"></script>
+</head>
+<body data-view="home">
+<svg class="defs" aria-hidden="true"><filter id="wob" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".014" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+<div class="dayplate" id="dayplate" aria-hidden="true"></div>
+
+<div class="app" id="app">
+  <svg class="vines" id="vines" aria-hidden="true"></svg>
+
+  <header class="titlebar" id="titlebar" data-tauri-drag-region>
+    <button class="brand" id="btnHome" title="首页"><img src="assets/icon-64.png" alt="首页" draggable="false"></button>
+    <div class="tabs" id="tabs" role="tablist" data-tauri-drag-region></div>
+    <button class="tab-add" id="btnTabAdd" title="打开 PDF（Ctrl+O）" data-ic="plus"></button>
+    <div class="drag" data-tauri-drag-region></div>
+    <div class="winctl">
+      <button id="wcMin" title="最小化" data-ic="min" data-sz="16"></button>
+      <button id="wcMax" title="最大化" data-ic="max" data-sz="16"></button>
+      <button id="wcClose" class="close" title="关闭" data-ic="close" data-sz="16"></button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section class="view home on" id="home"></section>
+
+    <section class="reader" id="reader">
+      <nav class="toolbar panel" id="toolbar">
+        <button class="tb" id="tbSidebar" title="侧栏：缩略图 / 目录（F4）" data-ic="sidebar"></button>
+        <button class="tb" id="tbOpen" title="打开（Ctrl+O）" data-ic="open"></button>
+        <span data-sprig></span>
+        <button class="tb" id="tbPrev" title="上一页" data-ic="up"></button>
+        <span class="pagebox"><input id="pageInput" inputmode="numeric" autocomplete="off" spellcheck="false" aria-label="页码"><span>/ <span id="pageTotal">0</span></span><span class="label" id="pageLabel"></span></span>
+        <button class="tb" id="tbNext" title="下一页" data-ic="down"></button>
+        <span data-sprig></span>
+        <button class="tb" id="tbZoomOut" title="缩小（Ctrl + -）" data-ic="zoomOut"></button>
+        <button class="zoombtn" id="tbZoom" title="缩放比例"><span id="zoomLabel">自动</span><span data-ic="down" data-sz="14"></span></button>
+        <button class="tb" id="tbZoomIn" title="放大（Ctrl + =）" data-ic="zoomIn"></button>
+        <span data-sprig class="opt-narrow"></span>
+        <button class="tb opt-narrow" id="tbRotate" title="顺时针旋转（Ctrl+R）" data-ic="rotCw"></button>
+        <button class="tb opt-mid" id="tbLayout" title="页面版式"></button>
+        <button class="tb" id="tbFind" title="查找（Ctrl+F）" data-ic="find"></button>
+        <button class="tb wide" id="tbEdit" title="编辑：高亮、画笔、文字、图片、签名，整理页面（Ctrl+E）"><span data-ic="pen"></span><span class="lb">编辑</span></button>
+        <span class="grow"></span>
+        <button class="tb wide opt-wide" id="tbMerge" title="合并 PDF（Ctrl+M）"><span data-ic="bind"></span>合并</button>
+        <button class="tb opt-mid" id="tbPrint" title="打印（Ctrl+P）" data-ic="print"></button>
+        <button class="tb opt-mid" id="tbSave" title="保存（Ctrl+S）；另存为是 Ctrl+Shift+S" data-ic="save"></button>
+        <button class="tb" id="tbMore" title="更多" data-ic="more"></button>
+        <button class="tb" id="tbTheme" title="切换：天真之歌 / 经验之歌" data-ic="theme"></button>
+      </nav>
+
+      <nav class="editbar panel" id="editbar" hidden>
+        <div class="etools" id="etools"></div>
+        <span data-sprig></span>
+        <div class="eprops" id="eprops"></div>
+        <span class="grow"></span>
+        <button class="tb" id="ebUndo" title="撤销（Ctrl+Z）" data-ic="undo" disabled></button>
+        <button class="tb" id="ebRedo" title="重做（Ctrl+Y）" data-ic="redo" disabled></button>
+        <button class="tb" id="ebDel" title="删除选中的批注（Delete）" data-ic="trash" disabled></button>
+        <span data-sprig></span>
+        <button class="tb wide" id="ebPages" title="整理页面：排序、旋转、删除、插入、提取"><span data-ic="pages"></span><span class="lb">整理页面</span></button>
+        <button class="btn sm" id="ebSave" title="保存（Ctrl+S）"><span data-ic="save" data-sz="16"></span>保存</button>
+        <button class="tb" id="ebClose" title="收起编辑栏（Ctrl+E）" data-ic="close"></button>
+      </nav>
+
+      <aside class="sidebar panel" id="sidebar">
+        <div class="seg" id="sbSeg"><button data-sb="thumbs" class="on">缩略图</button><button data-sb="outline">目录</button></div>
+        <div class="sb-body" id="sbBody"><div class="thumbs" id="thumbs"></div><div class="outline" id="outline" hidden></div></div>
+      </aside>
+
+      <div class="viewer-wrap" id="viewerWrap">
+                <div class="findbar panel" id="findbar" hidden>
+          <input id="findInput" placeholder="在文档里查找" autocomplete="off" spellcheck="false">
+          <span class="cnt" id="findCount"></span>
+          <button class="tb" id="findPrev" title="上一个（Shift+Enter）" data-ic="up"></button>
+          <button class="tb" id="findNext" title="下一个（Enter）" data-ic="down"></button>
+          <button class="opt" id="findCase" title="区分大小写">Aa</button>
+          <button class="opt" id="findWord" title="整词匹配（英文）">整词</button>
+          <button class="tb" id="findClose" title="关闭（Esc）" data-ic="close"></button>
+        </div>
+        <div class="vstate" id="vstate" hidden></div>
+      </div>
+    </section>
+
+    <section class="view merge" id="merge"></section>
+  </main>
+</div>
+
+<div class="rsz" id="rsz"></div>
+<div class="dropzone" id="dropzone"><div class="box"><span data-ic="drop" data-sz="44"></span><span id="dropText">松开就打开</span><small id="dropSub">只认 PDF 文件</small></div></div>
+<dialog id="orgDlg" class="orgdlg"></dialog>
+<dialog id="dlg"></dialog>
+<div class="toasts" id="toasts"></div>
+<div id="printContainer"></div>
+</body>
+</html>
