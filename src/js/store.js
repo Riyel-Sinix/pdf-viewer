@@ -13,11 +13,11 @@ export const store = {
 export function getTheme() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
 export function saveTheme(t) { try { localStorage.setItem('pv.theme', t); } catch {} }
 
-// 偏好：侧栏、页面色调、版式、编辑栏和各批注工具的默认颜色 / 粗细 / 字号
+// 偏好：侧栏、页面色调、版式、编辑栏和各批注工具的默认颜色 / 粗细 / 字号、图片转 PDF 的纸张 / 方向 / 边距
 const DEF_PREFS = {
   sidebar: true, sbTab: 'thumbs', tone: 'normal', scroll: 0, spread: 0, mergeBookmarks: true, mergeOpen: true,
   editbar: false, hl: { color: '#FFE27A', width: 12 }, ink: { color: '#2B231D', width: 2, opacity: 1 }, text: { color: '#2B231D', size: 14 },
-  signRemember: true,
+  signRemember: true, convPaper: 'a4', convOrient: 'auto', convMargin: 'narrow',
 };
 export const prefs = Object.assign({}, DEF_PREFS, store.get('prefs', {}));
 export const savePrefs = () => store.set('prefs', prefs);

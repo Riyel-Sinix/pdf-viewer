@@ -1,4 +1,4 @@
-// 首页：书名页、两张大卡片（打开 / 合并）、最近打开、今日之诗（和课表站同一天同一首，背景是那首诗的 Copy Z 原版插图）
+// 首页：书名页、三张卡片（打开 / 合并 / 转成 PDF）、最近打开、今日之诗（和课表站同一天同一首，背景是那首诗的 Copy Z 原版插图）
 import { $, esc, fmtWhen, fmtSize } from './util.js';
 import { icon, FLOURISH } from './icons.js';
 import { getRecent, removeRecent, clearRecent, getTheme } from './store.js';
@@ -43,7 +43,7 @@ export function showPoem(pm = todayPoem()) {
   });
 }
 
-/* actions: { open(), merge(), openRecent(path), } */
+/* actions: { open(), merge(), convert(), openRecent(path), } */
 export function renderHome(actions) {
   const root = $('#home');
   const dark = getTheme() === 'dark';
@@ -67,8 +67,13 @@ export function renderHome(actions) {
           <span><span class="t">${icon('bind', 22)}合并 PDF</span>
           <span class="d">把几份 PDF 按顺序装订成一本<br>也能只挑其中几页</span></span>
         </button>
+        <button class="act wide" data-home="convert">
+          <img class="pl" src="assets/plates/${dark ? '42' : '22'}.jpg" alt="">
+          <span><span class="t">${icon('convert', 22)}转成 PDF</span>
+          <span class="d">${platform.isDesktop ? '图片、Word、Excel、PPT、文本、Markdown、网页都能转成 PDF<br>几个文件也可以合成一份，转好了还能批注、整理页面' : '把照片、截图转成 PDF，几张图也可以合成一份<br>桌面版还能转 Word、Excel、PPT、文本和网页'}</span></span>
+        </button>
       </div>
-      <div class="hint">${icon('drop', 16)}也可以把 PDF 直接拖进窗口</div>
+      <div class="hint">${icon('drop', 16)}${platform.isDesktop ? '也可以把 PDF、图片、Office 文档直接拖进窗口' : '也可以把 PDF 或图片直接拖进窗口'}</div>
     </section>
     ${recent.length ? `<section class="recent">
       <div class="recent-h"><h2>最近打开<i>Of late</i></h2><button class="lnk" data-home="clear">清空记录</button></div>
@@ -94,6 +99,7 @@ export function renderHome(actions) {
     const a = b.dataset.home;
     if (a === 'open') actions.open();
     else if (a === 'merge') actions.merge();
+    else if (a === 'convert') actions.convert();
     else if (a === 'poem') showPoem();
     else if (a === 'clear') { clearRecent(); renderHome(actions); }
   };

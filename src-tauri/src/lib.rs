@@ -1,6 +1,8 @@
-//! PDF 查看器的桌面外壳：窗口、文件读写、系统对话框、单实例转发。界面和 PDF 处理都在 src/（pdf.js + pdf-lib）。
+//! PDF 查看器的桌面外壳：窗口、文件读写、系统对话框、单实例转发、转成 PDF（convert.rs）。界面和 PDF 处理都在 src/（pdf.js + pdf-lib）。
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+mod convert;
 
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -94,14 +96,31 @@ async fn write_file(request: Request<'_>) -> Result<(), String> {
         .map_err(|e| format!("保存失败：{e}"))
 }
 
+/// 自动化测试（PDFVIEWER_TEST_OFFSCREEN）时用单独的 WebView2 数据目录，不把测试文件写进用户的「最近打开」；平时返回 None
+pub(crate) fn test_data_dir() -> Option<PathBuf> {
+    std::env::var_os("PDFVIEWER_TEST_OFFSCREEN")?;
+    Some(
+        std::env::var_os("PDFVIEWER_TEST_DATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("pdf-viewer-test")),
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct FileFilter {
+    name: String,
+    extensions: Vec<String>,
+}
+
+/// 打开文件的对话框；filters 由前端给（PDF、能转成 PDF 的各类文件……），第一个是默认的
 #[tauri::command]
-async fn pick_pdfs(window: WebviewWindow, multiple: bool, title: Option<String>) -> Vec<String> {
+async fn pick_files(window: WebviewWindow, multiple: bool, title: Option<String>, filters: Vec<FileFilter>) -> Vec<String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut d = window
-            .dialog()
-            .file()
-            .add_filter("PDF 文件", &["pdf"])
-            .set_parent(&window);
+        let mut d = window.dialog().file().set_parent(&window);
+        for f in &filters {
+            let ext: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
+            d = d.add_filter(&f.name, &ext);
+        }
         if let Some(t) = title {
             d = d.set_title(t);
         }
@@ -192,15 +211,19 @@ pub fn run() {
             take_initial_files,
             read_file,
             write_file,
-            pick_pdfs,
+            pick_files,
             save_pdf_dialog,
             open_external,
             reveal_in_folder,
-            paths_exist
+            paths_exist,
+            convert::convert_office,
+            convert::print_pdf,
+            convert::decode_image
         ])
         .setup(|app| {
             // 自动化测试用：窗口放到屏幕外，而且永远不会被激活（不抢用户正在用的窗口的焦点）
-            let offscreen = std::env::var_os("PDFVIEWER_TEST_OFFSCREEN").is_some();
+            let test_data = test_data_dir();
+            let offscreen = test_data.is_some();
             let mut b = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("PDF 查看器")
                 .inner_size(1280.0, 860.0)
@@ -210,14 +233,9 @@ pub fn run() {
                 .visible(false)
                 // 只许停留在应用自己的页面里；PDF 里的外部链接由前端交给系统浏览器
                 .on_navigation(|url| matches!(url.scheme(), "tauri" | "asset") || url.host_str() == Some("tauri.localhost"));
-            b = if offscreen {
-                // 测试用单独的 WebView2 数据目录，不把测试文件写进用户的「最近打开」
-                let data = std::env::var_os("PDFVIEWER_TEST_DATA")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| std::env::temp_dir().join("pdf-viewer-test"));
-                b.focused(false).focusable(false).data_directory(data)
-            } else {
-                b.center()
+            b = match test_data {
+                Some(data) => b.focused(false).focusable(false).data_directory(data),
+                None => b.center(),
             };
             let win = b.build()?;
             if offscreen {

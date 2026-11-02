@@ -12,6 +12,7 @@ import { createVines } from './vines.js';
 import { EditBar } from './editbar.js';
 import { Organizer, organizerOpen, buildPages } from './organize.js';
 import { signatureDialog } from './sign.js';
+import { convertEntries, convertFilters, canConvert, convertError } from './convert.js';
 
 /* ---------- 图标填进静态结构 ---------- */
 $$('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.ic, +el.dataset.sz || 18)));
@@ -56,6 +57,8 @@ const merger = new Merger({
   listTabs: () => state.tabs.filter(t => t.pdf).map(t => ({ name: t.name, path: t.path, password: t.password, getBytes: () => getBytes(t) })),
   openResult: (name, bytes, path) => openEntries([path ? platform.entryFromPath(path) : platform.entryFromBytes(name, bytes)]),
   onCount: () => renderTabs(),
+  prepare: entries => prepareForMerge(entries),
+  filters: () => convertFilters({ withPdf: true }),
 });
 
 /* ---------- 视图 ---------- */
@@ -71,6 +74,7 @@ function homeActions() {
   return {
     open: () => openFromDialog(),
     merge: () => openMerge(),
+    convert: () => convertFlow(),
     openRecent: path => openEntries([platform.entryFromPath(path)]),
   };
 }
@@ -126,7 +130,8 @@ function renderTabs() {
   const box = $('#tabs');
   const html = state.tabs.map(t => {
     const d = isDirty(t);
-    return `<div class="tab${state.active === t.id ? ' on' : ''}${d ? ' dirty' : ''}" data-tab="${t.id}" title="${esc(t.path || t.name)}${d ? '（有没保存的修改）' : ''}" role="tab">
+    const tip = t.path || (t.converted ? `${t.name}：由「${t.converted.sources.slice(0, 3).join('」「')}」${t.converted.sources.length > 3 ? `等 ${t.converted.sources.length} 个文件` : ''}转换` : t.name);
+    return `<div class="tab${state.active === t.id ? ' on' : ''}${d ? ' dirty' : ''}" data-tab="${t.id}" title="${esc(tip)}${d ? (t.converted ? '（还没保存）' : '（有没保存的修改）') : ''}" role="tab">
       <span class="ic">${icon('book', 15)}</span><span class="nm">${esc(stripExt(t.name))}</span>
       <button class="x" data-x="${t.id}" title="关闭（Ctrl+W）">${icon('close', 13, 2)}${icon('dot', 12)}</button></div>`;
   });
@@ -214,7 +219,7 @@ async function askSave(tabs) {
   const one = tabs.length === 1;
   const v = await openDialog({
     html: `${dlgHead(one ? `保存对「${tabs[0].name}」的修改吗？` : `有 ${tabs.length} 份文档还没保存`, { k: 'Unsaved Leaves', sw: 'var(--warn)' })}
-      <div class="dlg-b">${one ? '不保存的话，这次加的批注、对页面的调整都会丢掉。' : `<ul class="dirtylist">${tabs.map(t => `<li>${esc(t.name)}</li>`).join('')}</ul>不保存的话，这些修改都会丢掉。`}</div>
+      <div class="dlg-b">${one ? (tabs[0].converted ? '这份 PDF 是刚转换出来的，还没存成文件，不保存就没有了。' : '不保存的话，这次加的批注、对页面的调整都会丢掉。') : `<ul class="dirtylist">${tabs.map(t => `<li>${esc(t.name)}${t.converted ? '（刚转换出来的）' : ''}</li>`).join('')}</ul>不保存的话，这些修改都会丢掉。`}</div>
       <div class="dlg-f"><button class="btn ghost" data-dlg="discard">不保存</button><span style="flex:1"></span><button class="btn ghost" data-dlg="">取消</button>
         <button class="btn" data-dlg="save" autofocus>${icon('save', 18)}${one ? '保存' : '全部保存'}</button></div>`,
   });
@@ -227,15 +232,25 @@ const IMG_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif
 const imageType = n => IMG_TYPES[String(n || '').split('.').pop().toLowerCase()] || '';
 async function openFromDialog() {
   try {
-    const entries = await platform.pickPdfs({ multiple: true, title: '打开 PDF' });
+    // 默认只列 PDF；第二个筛选项把能转成 PDF 的文件也列出来，选了就先转换再打开
+    const entries = await platform.pickFiles({ multiple: true, title: '打开 PDF', filters: [platform.PDF_FILTER, convertFilters({ withPdf: true })[0]] });
     if (entries.length) openEntries(entries);
   } catch (e) { toast('打不开文件选择框：' + e, { kind: 'err' }); }
 }
+const UNKNOWN_HINT = () => (platform.isDesktop ? '只认 PDF，以及能转成 PDF 的图片、Office 文档、文本和网页' : '只认 PDF 和图片');
+// PDF 直接打开；图片、Office 文档等先转成 PDF（没有路径的条目——合并结果之类——按 PDF 打开）
 async function openEntries(entries) {
-  const pdfs = entries.filter(en => !en.path || isPdfName(en.name) || isPdfName(en.path));
-  if (pdfs.length < entries.length) toast(`有 ${entries.length - pdfs.length} 个不是 PDF 的文件，没有打开`);
+  const pdfs = [], conv = [];
+  for (const en of entries) {
+    if (isPdfName(en.name) || isPdfName(en.path)) pdfs.push(en);
+    else if (canConvert(en.name)) conv.push(en);
+    else if (!en.path) pdfs.push(en);
+  }
+  const bad = entries.length - pdfs.length - conv.length;
+  if (bad) toast(`有 ${bad} 个文件打不开：${UNKNOWN_HINT()}`);
   let first = true;
   for (const en of pdfs) { openEntry(en, first); first = false; }
+  if (conv.length) convertAndOpen(conv);
 }
 async function openEntry(entry, focus = true) {
   if (entry.path) {
@@ -244,8 +259,9 @@ async function openEntry(entry, focus = true) {
   }
   const tab = { id: nextId('t'), name: entry.name, path: entry.path || null, size: entry.size ?? null, pdf: null, numPages: 0, fp: null, view: null,
     thumbs: new Map(), outline: undefined, labels: undefined, loading: true, password: null, encrypted: false, ratio: 1.414,
-    stateId: ++seq, savedState: 0, past: [], future: [], formDirty: false, busy: false, busyText: '' };
-  tab.savedState = tab.stateId;
+    stateId: ++seq, savedState: 0, past: [], future: [], formDirty: false, busy: false, busyText: '', converted: entry.converted || null };
+  // 刚转换出来的文档还没存成文件：一打开就算「有没保存的修改」（关的时候会问，Ctrl+S 存到源文件旁边）
+  tab.savedState = tab.converted ? 0 : tab.stateId;
   state.tabs.push(tab);
   if (focus) activate(tab.id); else renderTabs();
   try {
@@ -287,6 +303,52 @@ function recentThumb(tab, page) {
     .catch(() => {});
 }
 function openMerge() { activate('merge'); }
+
+/* ---------- 转成 PDF：首页卡片、「打开」里选了别的文件、拖进窗口、加进合并列表 ---------- */
+async function convertFlow() {
+  try {
+    const entries = await platform.pickFiles({ multiple: true, title: '选择要转成 PDF 的文件', filters: convertFilters() });
+    if (entries.length) convertAndOpen(entries);
+  } catch (e) { toast('打不开文件选择框：' + e, { kind: 'err' }); }
+}
+let converting = false;
+// 转换一批文件；出错的一个个提示出来。取消、或者正在转别的时返回 null
+async function runConvert(entries, opts) {
+  if (converting) { toast('正在转换别的文件，稍等一下'); return null; }
+  converting = true;
+  try {
+    const res = await convertEntries(entries, opts);
+    for (const f of res?.failed || []) toast(`「${f.name}」没转成：${f.error}`, { kind: 'err', ms: 9000 });
+    return res;
+  } catch (e) {
+    console.error(e);
+    toast('转换失败：' + convertError(e), { kind: 'err', ms: 8000 });
+    return null;
+  } finally { converting = false; }
+}
+// 转好的开成新标签页（还没保存）
+async function convertAndOpen(entries) {
+  const res = await runConvert(entries, { ask: true });
+  if (!res?.results.length) return;
+  const opened = res.results.map((r, i) => openEntry(Object.assign(platform.entryFromBytes(r.name, r.bytes), { converted: { dir: r.dir, sources: r.sources } }), i === 0));
+  const one = res.results.length === 1, first = await opened[0];
+  toast(one ? `转好了：${res.results[0].name}（还没保存）` : `转好了 ${res.results.length} 份 PDF（都还没保存）`, {
+    kind: 'ok', ms: 7000,
+    actions: one && platform.isDesktop ? [{ label: '保存', fn: () => { if (state.tabs.includes(first)) saveTab(first); } }] : [],
+  });
+}
+// 加进合并列表之前：不是 PDF 的先转成 PDF（每个文件一份，不问选项，顺序不变）
+async function prepareForMerge(entries) {
+  const conv = entries.filter(en => en.name && !isPdfName(en.name) && canConvert(en.name));
+  if (!conv.length) return entries;
+  const res = await runConvert(conv, { ask: false, combine: false });
+  const done = new Map((res?.results || []).map(r => [r.entry, r]));
+  return entries.flatMap(en => {
+    if (!conv.includes(en)) return [en];
+    const r = done.get(en);
+    return r ? [{ name: r.name, path: null, dir: r.dir, size: r.bytes.length, read: async () => r.bytes }] : [];
+  });
+}
 
 /* ---------- 编辑的账本：版本、保存、整理页面、撤销 ---------- */
 // 批注和表单改过没有（保存后会重新载入，所以「改过」就是从载入以来）
@@ -342,7 +404,7 @@ async function saveTab(tab, { as = false } = {}) {
     const flatten = tab.pdf.annotationStorage.size > 0;
     let path = tab.path;
     if (platform.isDesktop && (as || !path)) {
-      path = await platform.askSavePath(tab.name, tab.path ? platform.dirname(tab.path) : '');
+      path = await platform.askSavePath(tab.name, tab.path ? platform.dirname(tab.path) : tab.converted?.dir || '');
       if (!path) return false;
     }
     setBusy(tab, '正在保存…');
@@ -355,6 +417,7 @@ async function saveTab(tab, { as = false } = {}) {
     if (flatten) await replaceBytes(tab, bytes);      // 批注写进文件了：重新载入，以后「有没有改动」以存好的文件为准
     tab.stateId = tab.savedState = ver;
     tab.size = bytes.length;
+    tab.converted = null;
     tab.shownDirty = undefined;
     dirtyChanged(tab);
     if (renamed) updateTitle();
@@ -561,6 +624,7 @@ function moreItems() {
     '-',
     { label: '打印…', icon: 'print', kbd: 'Ctrl+P', disabled: !t, act: () => reader.print() },
     { label: '提取 / 合并页面…', icon: 'bind', disabled: !t, act: () => extractCurrent() },
+    { label: '把别的文件转成 PDF…', icon: 'convert', act: () => convertFlow() },
     { label: '文档属性', icon: 'info', kbd: 'Ctrl+D', disabled: !t, act: () => reader.showProperties() },
     t?.path && platform.isDesktop ? { label: '在文件夹中显示', icon: 'folder', act: () => platform.revealInFolder(t.path) } : null,
     '-',
@@ -726,27 +790,45 @@ $('#viewerWrap').addEventListener('mousemove', e => reader.present && reader.pre
 // 鼠标侧键（后退 / 前进）不要让网页导航
 addEventListener('mouseup', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
 
-/* ---------- 拖放：PDF 打开（在合并页就加进列表），图片放到当前页上 ---------- */
+/* ---------- 拖放：PDF 打开（在合并页就加进列表）；阅读时拖进来的图片放到当前页上；别的能转换的文件转成 PDF ---------- */
 const dz = $('#dropzone');
+// 把拖进来的文件分成几拨：PDF、要放到页面上的图片、要转成 PDF 的、打不开的
+function sortDropped(names) {
+  const doc = !!docReady() && state.active !== 'merge', out = { pdf: [], img: [], conv: [], bad: [] };
+  names.forEach((n, i) => out[isPdfName(n) ? 'pdf' : doc && imageType(n) ? 'img' : canConvert(n) ? 'conv' : 'bad'].push(i));
+  return out;
+}
 function dropHint(on, paths = null) {
   if (!on) { dz.classList.remove('on'); return; }
-  const merge = state.active === 'merge', doc = !!docReady() && state.active !== 'merge';
-  const pdfN = paths ? paths.filter(isPdfName).length : -1, imgN = paths ? paths.filter(imageType).length : -1;
-  $('#dropText').textContent = pdfN === 0 && imgN > 0 ? (doc ? '松开，把图片放到这一页上' : '先打开一份文档，才能放图片')
-    : pdfN === 0 ? '这些不是 PDF' : merge ? '松开，加入合并列表' : '松开就打开';
-  $('#dropSub').textContent = pdfN > 0 ? `${pdfN} 个 PDF 文件` : imgN > 0 ? `${imgN} 张图片` : doc ? 'PDF 会打开，图片会放到页面上' : '只认 PDF 文件';
+  const merge = state.active === 'merge', doc = !!docReady() && !merge;
+  let text, sub;
+  if (!paths) {                  // 网页版拖着的时候不一定知道是什么文件
+    text = merge ? '松开，加入合并列表' : '松开就打开';
+    sub = doc ? 'PDF 会打开，图片会放到这一页上，别的文件会转成 PDF' : 'PDF 会打开，图片之类的文件会转成 PDF';
+  } else {
+    const s = sortDropped(paths), [p, i, c, b] = [s.pdf.length, s.img.length, s.conv.length, s.bad.length];
+    if (!p && !i && !c) { text = '这些文件打不开'; sub = UNKNOWN_HINT(); }
+    else {
+      text = merge ? '松开，加入合并列表' : i && !p && !c ? '松开，把图片放到这一页上' : !p ? '松开，转成 PDF' : '松开就打开';
+      sub = [p && `${p} 个 PDF`, i && `${i} 张图片放到页面上`, c && `${c} 个文件${merge ? '先' : '会'}转成 PDF`, b && `${b} 个打不开`].filter(Boolean).join('，');
+    }
+  }
+  $('#dropText').textContent = text;
+  $('#dropSub').textContent = sub;
   dz.classList.add('on');
 }
 function handleDrop(entries, at = null) {
   dropHint(false);
-  const pdfs = entries.filter(en => isPdfName(en.name)), imgs = entries.filter(en => imageType(en.name));
-  if (imgs.length) {
-    if (docReady() && state.active !== 'merge') insertDroppedImages(imgs, at);
-    else toast('先打开一份文档，再把图片拖到页面上');
+  const s = sortDropped(entries.map(en => en.name)), pick = k => s[k].map(i => entries[i]);
+  if (s.bad.length) toast(`有 ${s.bad.length} 个文件打不开：${UNKNOWN_HINT()}`);
+  if (state.active === 'merge') {
+    const use = entries.filter((_, i) => !s.bad.includes(i));
+    if (use.length) merger.addEntries(use);
+    return;
   }
-  if (!pdfs.length) { if (!imgs.length && entries.length) toast('只能打开 PDF 文件'); return; }
-  if (state.active === 'merge') merger.addEntries(pdfs);
-  else openEntries(pdfs);
+  if (s.img.length) insertDroppedImages(pick('img'), at);
+  if (s.pdf.length) openEntries(pick('pdf'));
+  if (s.conv.length) convertAndOpen(pick('conv'));
 }
 const native = platform.onNativeDragDrop({
   enter: paths => dropHint(true, paths),
@@ -817,4 +899,4 @@ platform.onExternalOpen(entries => { if (entries.length) openEntries(entries); }
 })();
 
 // 调试 / 自动化测试用：在控制台里可以拿到这些对象
-Object.assign(window, { __pv: { state, reader, merger, editbar, organizer, openEntries, activate, saveTab, rebuildPages, quickPages, undo, redo, isDirty, getBytes } });
+Object.assign(window, { __pv: { state, reader, merger, editbar, organizer, openEntries, activate, saveTab, rebuildPages, quickPages, undo, redo, isDirty, getBytes, convertAndOpen, handleDrop } });

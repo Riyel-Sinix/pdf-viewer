@@ -17,6 +17,7 @@
 | pdf.js 编辑器的简体中文界面文字（`src/vendor/pdfjs/locale/`、`tools/l10n/`） | [pdf.js 的 Fluent 译文](https://github.com/mozilla/pdf.js/tree/master/l10n/zh-CN) | [MPL-2.0](licenses/MPL-2.0.txt)（文件头有说明） |
 | pdf-lib（`src/vendor/pdf-lib/`：旋转、空白页、书签、文档信息） | [1.17.1](https://github.com/Hopding/pdf-lib) | [MIT](src/vendor/pdf-lib/LICENSE.md) |
 | └ 打包在 pdf-lib 里的依赖 | @pdf-lib/standard-fonts 1.0.0、@pdf-lib/upng 1.0.1、pako 1.0.11、tslib 1.14.1 | [MIT](licenses/pdf-lib-standard-fonts-LICENSE.md)、[MIT](licenses/pdf-lib-upng-LICENSE.txt)、[MIT 和 Zlib](licenses/pako-LICENSE.txt)、[0BSD](licenses/tslib-LICENSE.txt) |
+| marked（`src/vendor/marked/`：转成 PDF 时把 Markdown 排成网页） | [18.1.2](https://github.com/markedjs/marked) | [MIT，另附 Markdown 原作（John Gruber）的 BSD 式许可](src/vendor/marked/LICENSE) |
 | 霞鹜文楷 LXGW WenKai（`src/assets/fonts/wk-*.woff2`） | [v1.530](https://github.com/lxgw/LxgwWenKai)，按 GB2312 + 界面用字子集化 | [SIL OFL 1.1](licenses/OFL-LXGW-WenKai.txt) |
 | IM FELL English（`src/assets/fonts/fell-*.woff2`） | [Igino Marini](https://iginomarini.com/fell/the-revival-fonts/)，子集化 | [SIL OFL 1.1](licenses/OFL-IM-Fell-English.txt) |
 | 《天真与经验之歌》插图（`src/assets/plates/`） | William Blake，Copy Z（1826 年印本），美国国会图书馆 Rosenwald 藏品（[Rosenwald 1801A](https://hdl.loc.gov/loc.rbc/rosenwald.1801.1)） | 公有领域 |

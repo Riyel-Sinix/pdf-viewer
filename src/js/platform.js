@@ -15,27 +15,38 @@ export function entryFromBytes(name, bytes, path = null) { return { name, path, 
 
 export async function readPath(path) { return toBytes(await invoke('read_file', { path })); }
 
-export async function pickPdfs({ multiple = true, title = '' } = {}) {
+// 选文件：filters 是 [{ name, extensions }]，第一个是默认的筛选；网页版把所有扩展名合在一起
+export async function pickFiles({ multiple = true, title = '', filters = [] } = {}) {
   if (isDesktop) {
-    const paths = await invoke('pick_pdfs', { multiple, title: title || null });
+    const paths = await invoke('pick_files', { multiple, title: title || null, filters });
     return (paths || []).map(entryFromPath);
   }
+  const accept = [...new Set(filters.flatMap(f => f.extensions))].map(e => '.' + e).join(',');
   return new Promise(resolve => {
-    const inp = Object.assign(document.createElement('input'), { type: 'file', accept: '.pdf,application/pdf', multiple });
+    const inp = Object.assign(document.createElement('input'), { type: 'file', accept, multiple });
     inp.addEventListener('change', () => resolve([...inp.files].map(entryFromFile)), { once: true });
     inp.addEventListener('cancel', () => resolve([]), { once: true });
     inp.click();
   });
 }
+export const PDF_FILTER = { name: 'PDF 文件', extensions: ['pdf'] };
+export const pickPdfs = ({ multiple = true, title = '' } = {}) => pickFiles({ multiple, title, filters: [PDF_FILTER] });
+
+/* 转成 PDF 里靠本机的部分（只有桌面版）：Office 文档、打印网页、WIC 解码图片。出错时抛出 Rust 给的文字 */
+export async function convertOffice(path, kind) { return toBytes(await invoke('convert_office', { path, kind })); }
+export async function printPdf(job) { return toBytes(await invoke('print_pdf', { job })); }
+export async function decodeImage(path) { return toBytes(await invoke('decode_image', { path })); }
 
 // 写文件（桌面版）：先写临时文件再改名，写到一半出错不会弄坏原文件
 export async function writeFile(path, bytes) {
   await invoke('write_file', bytes, { headers: { 'x-path': encodeURIComponent(path) } });
 }
 
-// 「另存为」对话框，只问路径不写；返回路径或 null（取消）
+// 「另存为」对话框，只问路径不写；返回路径或 null（取消）。
+// 自动化测试在页面里设 window.__pvTest.askSavePath 直接给路径——系统对话框会跑到用户眼前，而且 Tauri 的 invoke 改不了
 export async function askSavePath(suggestedName, directory = '') {
   if (!/\.pdf$/i.test(suggestedName)) suggestedName += '.pdf';
+  if (window.__pvTest?.askSavePath) return window.__pvTest.askSavePath(suggestedName, directory);
   return (await invoke('save_pdf_dialog', { fileName: suggestedName, directory: directory || null })) || null;
 }
 

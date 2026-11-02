@@ -1,5 +1,6 @@
 // README 用的截图：node tools/screenshots.mjs [exe 路径]
-// 先跑 python -P tools/make-showcase-pdf.py 生成《天真之歌》《经验之歌》两册示例（公有领域）。
+// 先跑 python -P tools/make-showcase-pdf.py 生成《天真之歌》《经验之歌》两册示例（公有领域）；
+// 「转成 PDF」那两张要再跑 python -P tools/make-convert-tests.py（没有就跳过）。
 // 和冒烟测试一样，窗口开在屏幕外、不抢焦点（不截桌面），通过 WebView2 的 DevTools 协议摆好场景、截图，
 // 再用 PyMuPDF 缩小转成 JPEG 放到 docs/
 import { spawn, execFileSync } from 'node:child_process';
@@ -35,14 +36,14 @@ try {
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
-  const send = (method, params = {}) => new Promise((r, rej) => {
+  const send = (method, params = {}, ms = 30000) => new Promise((r, rej) => {
     const id = ++seq;
-    const t = setTimeout(() => { pending.delete(id); rej(new Error(`DevTools 调用超时：${method}`)); }, 30000);
+    const t = setTimeout(() => { pending.delete(id); rej(new Error(`DevTools 调用超时：${method}`)); }, ms);
     pending.set(id, m => { clearTimeout(t); r(m); });
     ws.send(JSON.stringify({ id, method, params }));
   });
-  const evaluate = async expr => {
-    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+  const evaluate = async (expr, ms) => {
+    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }, ms);
     if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text);
     return r.result?.result?.value;
   };
@@ -185,6 +186,35 @@ try {
   })()`);
   await shot('merge');
   await evaluate(`document.querySelector('#tbTheme').click(), true`);
+
+  // 6. 转成 PDF（要先跑 python -P tools/make-convert-tests.py；Word 那一份要本机装了 Office）：
+  //    两张插图、一份 Word、一份 Markdown 拖进首页 → 选项对话框（勾上合成一份）→ 合成好的那份，目录里每个文件一个书签
+  const CV = path.join(root, '.cache', 'test', 'convert');
+  if (fs.existsSync(path.join(CV, '报告.docx'))) {
+    await evaluate(`(async () => {
+      const S = __s;
+      __pv.activate('home'); await S.sleep(600);
+      await __TAURI__.event.emit('tauri://drag-drop', { paths: ${JSON.stringify(['The Blossom.webp', '照片-EXIF方向6.jpg', '报告.docx', '说明.md'].map(n => path.join(CV, n)))}, position: { x: 300, y: 300 } });
+      for (let i = 0; i < 40 && !document.querySelector('#dlg.cvdlg[open]'); i++) await S.sleep(150);
+      const box = document.querySelector('#cvComb'); if (box && !box.checked) box.click();
+      await S.sleep(400);
+      return true;
+    })()`);
+    await shot('convert');
+    const n = await evaluate(`(async () => {
+      const S = __s, before = __pv.state.tabs.length;
+      document.querySelector('#dlg [data-dlg="ok"]').click();
+      for (let i = 0; i < 600; i++) { await S.sleep(200); const t = __pv.state.tabs[before]; if (t && !t.loading && t.leaf && !t.leaf.pending) break; }
+      const t = __pv.state.tabs[before];
+      if (!t) return 0;
+      __pv.activate(t.id); await S.sleep(800);
+      __pv.reader.setZoom('page-fit'); await S.sleep(300);
+      document.querySelector('#sbSeg [data-sb="outline"]').click(); await S.sleep(1200);
+      document.querySelectorAll('.toast').forEach(x => x.remove());
+      return t.numPages;
+    })()`, 180000);
+    if (n) await shot('converted');
+  }
 } catch (e) {
   ok = false;
   console.error('截图失败：', e.message);

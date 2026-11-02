@@ -1,4 +1,4 @@
-// 把 node_modules 里用到的 pdf.js / pdf-lib 文件拷进 src/vendor（应用直接从这里加载，不需要打包器）
+// 把 node_modules 里用到的 pdf.js / pdf-lib / marked 文件拷进 src/vendor（应用直接从这里加载，不需要打包器）
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -20,8 +20,11 @@ copy(nm(pj + 'web/pdf_viewer.css'), out('pdfjs/pdf_viewer.css'));
 copy(nm(pj + 'web/images'), out('pdfjs/images'));
 for (const d of ['cmaps', 'standard_fonts', 'wasm', 'iccs']) copy(nm(pj + d), out('pdfjs/' + d));
 copy(nm(pj + 'LICENSE'), out('pdfjs/LICENSE'));
-// pdf_viewer.mjs 末尾的 sourceMappingURL 指向不存在的 .map，去掉免得控制台报 404
-for (const f of ['pdfjs/pdf_viewer.mjs']) {
+// 转成 PDF 时把 Markdown 排成网页
+copy(nm('marked/lib/marked.esm.js'), out('marked/marked.esm.js'));
+copy(nm('marked/LICENSE'), out('marked/LICENSE'));
+// 末尾的 sourceMappingURL 指向没拷过来的 .map，去掉免得控制台报 404
+for (const f of ['pdfjs/pdf_viewer.mjs', 'marked/marked.esm.js']) {
   const p = out(f);
   fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace(/\n\/\/# sourceMappingURL=.*\s*$/, '\n'));
 }
@@ -33,5 +36,5 @@ copy(nm('pdf-lib/dist/pdf-lib.esm.min.js'), out('pdf-lib/pdf-lib.esm.min.js'));
 copy(nm('pdf-lib/LICENSE.md'), out('pdf-lib/LICENSE.md'));
 
 const v = n => JSON.parse(fs.readFileSync(nm(n + '/package.json'), 'utf8')).version;
-fs.writeFileSync(out('VERSIONS.txt'), `pdfjs-dist ${v('pdfjs-dist')}\npdf-lib ${v('pdf-lib')}\n`);
-console.log('vendor ok:', `pdfjs-dist ${v('pdfjs-dist')}, pdf-lib ${v('pdf-lib')}`);
+fs.writeFileSync(out('VERSIONS.txt'), `pdfjs-dist ${v('pdfjs-dist')}\npdf-lib ${v('pdf-lib')}\nmarked ${v('marked')}\n`);
+console.log('vendor ok:', `pdfjs-dist ${v('pdfjs-dist')}, pdf-lib ${v('pdf-lib')}, marked ${v('marked')}`);

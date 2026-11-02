@@ -53,7 +53,8 @@ export function formatRange(pages) {
 const allPages = n => Array.from({ length: n }, (_, i) => i);
 
 export class Merger {
-  /* hooks: { listTabs() -> [{ name, path, password, getBytes() }], openResult(name, bytes, path), onCount(n) } */
+  /* hooks: { listTabs() -> [{ name, path, password, getBytes() }], openResult(name, bytes, path), onCount(n),
+   *          prepare(entries) -> entries（不是 PDF 的先转成 PDF）, filters() -> 选文件时的筛选项 } */
   constructor(hooks) {
     this.hooks = hooks;
     this.items = [];
@@ -72,10 +73,11 @@ export class Merger {
 
   /* ---------- 添加 ---------- */
   async addEntries(entries) {
+    if (this.hooks.prepare) entries = await this.hooks.prepare(entries);       // 图片、Office 文档等先转成 PDF（顺序不变）
     const added = [];
     for (const en of entries) {
       if (en.name && !/\.pdf$/i.test(en.name) && en.path) { toast(`「${en.name}」不是 PDF，跳过了`, { kind: 'err' }); continue; }
-      const it = { id: nextId('m'), name: en.name || '未命名.pdf', path: en.path || null, size: en.size ?? null, password: en.password || null,
+      const it = { id: nextId('m'), name: en.name || '未命名.pdf', path: en.path || null, dir: en.dir || (en.path ? platform.dirname(en.path) : ''), size: en.size ?? null, password: en.password || null,
         bytes: null, pdf: null, numPages: 0, rangeText: '', selection: null, rotation: 0, cover: null, thumbs: new Map(), error: '', loading: true };
       this.items.push(it);
       added.push([it, en]);
@@ -119,7 +121,8 @@ export class Merger {
     } catch {}
   }
   async addFromDialog() {
-    const entries = await platform.pickPdfs({ multiple: true, title: '选择要合并的 PDF' }).catch(e => { toast('打不开文件选择框：' + e, { kind: 'err' }); return []; });
+    const filters = this.hooks.filters?.() || [platform.PDF_FILTER];
+    const entries = await platform.pickFiles({ multiple: true, title: '选择要合并的文件', filters }).catch(e => { toast('打不开文件选择框：' + e, { kind: 'err' }); return []; });
     if (entries.length) this.addEntries(entries);
   }
   addFromTabs(anchor) {
@@ -245,7 +248,7 @@ export class Merger {
       </header>
       ${n ? `<div class="mlist" id="mlist">${this.items.map((it, i) => this.#cardHTML(it, i)).join('')}</div>`
         : `<div class="mempty" data-m="add">${icon('bind', 42, 1.4)}<div class="big">把要合并的 PDF 拖到这里</div><div>或者点这里选择文件（可以一次选好几个）</div>
-           <div class="tip">文件会按列表顺序装订；每个文件的原有书签都会保留，并归到以文件名命名的书签下面。加了密码的 PDF 输入密码后也能合并，合并结果不带密码。</div></div>`}
+           <div class="tip">文件会按列表顺序装订；每个文件的原有书签都会保留，并归到以文件名命名的书签下面。加了密码的 PDF 输入密码后也能合并，合并结果不带密码。${platform.isDesktop ? '图片、Word / Excel / PPT、文本、网页也能直接加进来，会先转成 PDF。' : '图片也能直接加进来，会先转成 PDF。'}</div></div>`}
       <div class="mfoot"><div class="mfoot-in panel">
         <div class="sum" id="mSum"></div>
         <div class="opts">
@@ -525,7 +528,7 @@ export class Merger {
 
       // 3. 保存
       stage('等待选择保存位置…');
-      const res = await platform.savePdf(out, outName, first.path ? platform.dirname(first.path) : '');
+      const res = await platform.savePdf(out, outName, first.dir);
       closeDialog(null);
       if (!res) { toast('没有保存（取消了）'); return; }
       const extra = skipped ? `；有 ${skipped} 个读不了的文件被跳过` : '';
@@ -548,7 +551,8 @@ export class Merger {
   }
 }
 
-function postProcess(bytes, msg) {
+// 也给「转成 PDF」合成一份时用
+export function postProcess(bytes, msg) {
   return new Promise((resolve, reject) => {
     const w = new Worker(new URL('./merge-worker.js', import.meta.url), { type: 'module' });
     const done = () => w.terminate();
