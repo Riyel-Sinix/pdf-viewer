@@ -1,35 +1,56 @@
-//! PDF 查看器的桌面外壳：窗口、文件读写、系统对话框、单实例转发、转成 PDF（convert.rs）。界面和 PDF 处理都在 src/（pdf.js + pdf-lib）。
+//! PDF 查看器的桌面外壳：窗口、文件读写、系统对话框、单实例转发、转成 PDF（convert.rs）、右键菜单（shell_menu.rs）。界面和 PDF 处理都在 src/（pdf.js + pdf-lib）。
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 mod convert;
+mod shell_menu;
 
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-/// 启动参数里带的文件（资源管理器「打开方式」、拖到程序图标上），等页面准备好了来取
-struct InitialFiles(Mutex<Vec<String>>);
+/// 等页面来取的文件：启动参数里带的，和程序开着时从别的进程转过来的（单实例）。
+/// open：要打开的（资源管理器「打开方式」、拖到程序图标上）；convert：右键菜单「转成 PDF」点的，转好直接存到源文件旁边。
+/// 先放在这里、再通知页面来取：多选时资源管理器几乎同时启动好几个进程，转过来的时候页面可能还没载完，直接发事件会丢
+#[derive(Default, serde::Serialize)]
+struct Pending {
+    open: Vec<String>,
+    convert: Vec<String>,
+}
+struct PendingFiles(Mutex<Pending>);
 
-/// 从命令行参数里挑出存在的文件；相对路径按 cwd 解析
-fn file_args<I: IntoIterator<Item = String>>(args: I, cwd: Option<&Path>) -> Vec<String> {
-    args.into_iter()
-        .skip(1)
-        .filter(|a| !a.starts_with('-'))
-        .filter_map(|a| {
-            let p = PathBuf::from(&a);
-            let p = if p.is_absolute() {
-                p
+/// 从命令行参数里挑出存在的文件（相对路径按 cwd 解析）；`--convert` 后面的是要转成 PDF 的
+fn launch_files<I: IntoIterator<Item = String>>(args: I, cwd: Option<&Path>) -> Pending {
+    let mut p = Pending::default();
+    let mut convert = false;
+    for a in args.into_iter().skip(1) {
+        if a == "--convert" {
+            convert = true;
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        let f = PathBuf::from(&a);
+        let f = if f.is_absolute() {
+            f
+        } else {
+            match cwd.map(Path::to_path_buf).or_else(|| std::env::current_dir().ok()) {
+                Some(c) => c.join(&f),
+                None => continue,
+            }
+        };
+        if f.is_file() {
+            let s = f.to_string_lossy().into_owned();
+            if convert {
+                p.convert.push(s);
             } else {
-                match cwd {
-                    Some(c) => c.join(&p),
-                    None => std::env::current_dir().ok()?.join(&p),
-                }
-            };
-            p.is_file().then(|| p.to_string_lossy().into_owned())
-        })
-        .collect()
+                p.open.push(s);
+            }
+        }
+    }
+    p
 }
 
 fn percent_decode(s: &str) -> Result<String, String> {
@@ -64,8 +85,18 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 #[tauri::command]
-fn take_initial_files(state: State<'_, InitialFiles>) -> Vec<String> {
+fn take_pending_files(state: State<'_, PendingFiles>) -> Pending {
     std::mem::take(&mut *state.0.lock().unwrap())
+}
+
+#[tauri::command]
+fn shell_menu_status() -> Result<shell_menu::Status, String> {
+    Ok(shell_menu::status(&std::env::current_exe().map_err(|e| e.to_string())?))
+}
+
+#[tauri::command]
+fn set_shell_menu(on: bool) -> Result<shell_menu::Status, String> {
+    shell_menu::set(&std::env::current_exe().map_err(|e| e.to_string())?, on)
 }
 
 #[tauri::command]
@@ -180,18 +211,39 @@ fn reveal_in_folder(app: AppHandle, path: String) -> Result<(), String> {
     app.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 
+/// 文件在不在；any：文件夹也算（找个不重名的文件名时用）
 #[tauri::command]
-fn paths_exist(paths: Vec<String>) -> Vec<bool> {
-    paths.iter().map(|p| Path::new(p).is_file()).collect()
+fn paths_exist(paths: Vec<String>, any: Option<bool>) -> Vec<bool> {
+    let any = any.unwrap_or(false);
+    paths.iter().map(|p| if any { Path::new(p).exists() } else { Path::new(p).is_file() }).collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let initial = file_args(std::env::args(), None);
+    // 安装程序在装好、卸载前调用：只改右键菜单，不开窗口（在单实例之前处理，不会转给开着的窗口）
+    let args: Vec<String> = std::env::args().collect();
+    for (flag, register) in [("--register-shell-menu", true), ("--unregister-shell-menu", false)] {
+        if args.iter().any(|a| a == flag) {
+            std::process::exit(shell_menu::from_installer(register));
+        }
+    }
+    let initial = launch_files(args, None);
+    let mut context = tauri::generate_context!();
+    // 自动化测试换个 identifier：单实例按它认程序，不换的话用户正开着 PDF 查看器时，测试的启动参数会转进用户的窗口里
+    if test_data_dir().is_some() {
+        context.config_mut().identifier.push_str(".test");
+    }
     tauri::Builder::default()
-        // 已经开着时再打开 PDF：交给正在运行的窗口，开成新标签页
+        // 已经开着时再打开 PDF、或者右键「转成 PDF」：交给正在运行的窗口
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
-            let files = file_args(argv, Some(Path::new(&cwd)));
+            let got = launch_files(argv, Some(Path::new(&cwd)));
+            let any = !(got.open.is_empty() && got.convert.is_empty());
+            if any {
+                let state = app.state::<PendingFiles>();
+                let mut q = state.0.lock().unwrap();
+                q.open.extend(got.open);
+                q.convert.extend(got.convert);
+            }
             if let Some(w) = app.get_webview_window("main") {
                 // 平时要把窗口提到前面；自动化测试时不要抢用户正在用的窗口的焦点
                 if std::env::var_os("PDFVIEWER_TEST_OFFSCREEN").is_none() {
@@ -199,16 +251,18 @@ pub fn run() {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }
-                if !files.is_empty() {
-                    let _ = w.emit("open-files", files);
+                if any {
+                    let _ = w.emit("files-pending", ());
                 }
             }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(InitialFiles(Mutex::new(initial)))
+        .manage(PendingFiles(Mutex::new(initial)))
         .invoke_handler(tauri::generate_handler![
-            take_initial_files,
+            take_pending_files,
+            shell_menu_status,
+            set_shell_menu,
             read_file,
             write_file,
             pick_files,
@@ -253,6 +307,6 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("启动 PDF 查看器失败");
 }

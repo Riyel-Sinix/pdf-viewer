@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 应用图标（tools/icon/make-icon.py 生成）：布莱克《天真与经验之歌》式的手工上色首字母——IM FELL English 的「P」，描金、朱红水彩、墨线；
+       藤蔓从右下绕着字长上来，顶上开一朵花，左上一颗星 -->
+  <defs>
+    <!-- 水彩：边缘不齐、颜料深浅不匀 -->
+    <filter id="wash" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency=".022" numOctaves="3" seed="4" result="n1"/>
+      <feDisplacementMap in="SourceGraphic" in2="n1" scale="14" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="11" result="n2"/>
+      <feColorMatrix in="n2" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.05 1.42" result="mask"/>
+      <feComposite in="d" in2="mask" operator="in" result="mottle"/>
+      <feGaussianBlur in="mottle" stdDeviation="1.1"/>
+    </filter>
+    <!-- 字的颜料：边缘只轻轻抖一点（字形本来就是手刻的毛边），颜色深浅不匀 -->
+    <filter id="tint" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".03" numOctaves="3" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".024" numOctaves="2" seed="19" result="n2"/>
+      <feColorMatrix in="n2" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -.8 1.5" result="mask"/>
+      <feComposite in="d" in2="mask" operator="in"/>
+    </filter>
+    <filter id="gild" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".022" numOctaves="3" seed="4" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="8" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feGaussianBlur in="d" stdDeviation="1.2"/>
+    </filter>
+    <filter id="etch" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="2" seed="21" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="4.5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="paper" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="3" seed="3" result="t"/>
+      <feColorMatrix in="t" type="matrix" values="0 0 0 0 .42  0 0 0 0 .32  0 0 0 0 .2  0 0 0 .55 -.1"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B9CFD8"/>
+      <stop offset=".34" stop-color="#E4E2C4"/>
+      <stop offset=".7" stop-color="#F0DDAE"/>
+      <stop offset="1" stop-color="#E7C79E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".3" cy=".1" r=".6">
+      <stop offset="0" stop-color="#FFF4C8" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#FFF4C8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2=".35" y2="1">
+      <stop offset="0" stop-color="#C0553A"/>
+      <stop offset=".55" stop-color="#9C3F25"/>
+      <stop offset="1" stop-color="#7E301C"/>
+    </linearGradient>
+    <clipPath id="tileClip"><rect x="16" y="16" width="480" height="480" rx="104"/></clipPath>
+    <path id="P" d="M130 410.9Q130 409.5 131 407.9Q131.9 406.3 133.3 404.9Q134.6 403.4 135.9 402.2Q137.3 401 138 400.3H144.3Q149.7 400.3 154.9 399.9Q160.1 399.5 164.8 398.3Q169.6 397.1 173.8 394.2Q178.1 391.3 181.7 386.2L189.3 376.9Q190.5 375.7 190.7 374.6Q191 373.5 191 370.9L189.3 339.1Q189.3 331.3 191.8 324.2Q194.4 317.2 194.4 310.4Q194.4 302.9 191.8 294.9Q189.3 286.8 189.3 278.6Q189.3 276.6 189.9 275.3Q190.5 274 191.1 272.6Q191.7 271.3 192.3 269.8Q192.9 268.4 192.9 266.4L190.5 249.2L192.9 226.1V216.7L189.3 210.1Q188.8 204 188 198.4Q187.6 193.6 187.1 188.7Q186.6 183.9 186.3 180.7L189.7 169.3Q189.7 165.9 188.3 158.1Q186.8 150.4 184.4 142.1Q182 133.8 179.2 127Q176.4 120.2 173.7 118.8Q169.6 117.6 162.3 116.5Q155 115.4 147.8 113.1Q140.7 110.8 135.3 106.9Q130 103 130 96.2Q130 94 131.2 94Q135.1 94 138 93.3Q140.9 92.6 143.5 91.6Q146 90.6 148.6 89.9Q151.1 89.2 154.3 89.2L173.7 91.6L212.8 87.7L220.8 90.4L233.5 87.7Q240.5 86.7 247.3 86.4Q254.1 86 261.1 86Q267.7 86 274.3 86.4Q280.8 86.7 287.1 87.7Q292.2 90.4 297.4 90.7Q302.7 91.1 308 91.1Q313.8 91.1 319.4 91.6Q325 92.1 330.4 93.3Q334.7 94 341.8 97.3Q348.8 100.6 356.2 105.1Q363.6 109.6 369.8 114.9Q376 120.2 378.7 125.1Q380.9 130.7 382.7 137.2Q384.5 143.8 386 150.5Q387.4 157.2 388.3 163.8Q389.1 170.5 389.1 176.3Q389.1 179.3 389 184.1Q388.9 189 388.3 194.1Q387.7 199.2 386.7 203.5Q385.7 207.9 384.3 210.1L377 219.3L375.3 228.6Q374.1 231.5 369.8 236.4Q365.6 241.4 360.4 246.6Q355.1 251.9 350.1 256.2Q345.2 260.6 342.3 261.8Q340.1 263 336.9 264.6Q333.8 266.2 330.4 267.9Q327 269.6 323.9 270.9Q320.9 272.3 318.9 272.8L301.9 274L291.3 277.4Q288.3 277.4 284.2 276.5Q280.1 275.7 276.3 274Q272.6 272.3 269.8 270.2Q267 268.1 267 265.5Q267 261.6 272.1 259.6L300.2 253.8Q300.5 252.6 302.1 251.8Q303.6 250.9 304.9 250.4Q313.4 246 320.6 238.9Q327.9 231.7 333.3 223Q338.6 214.2 341.6 204.4Q344.7 194.6 344.7 184.4Q344.2 182.4 343.4 180.8Q342.5 179.3 342.3 178Q342.3 177.8 342 177.4Q341.8 177.1 341.8 176.1Q340.8 169.3 339.6 160.2Q338.4 151.1 335.9 144.5Q335 142.1 330.7 137.9Q326.5 133.6 321 128.7Q315.5 123.9 309.8 119.2Q304.1 114.4 300.2 111L278.6 105.9H259.4Q257.3 107.1 253.2 108.1Q249.2 109.1 245.5 110.5Q241.7 112 238.8 114.5Q235.9 117.1 235.9 121.5V149.6Q237.6 151.8 237.8 153Q238.1 154.2 238.1 157.2L235.9 166.4Q235.9 166.9 237 169.4Q238.1 172 238.1 173.2V177.3L233.7 189.9L239.3 218.1Q239.3 220.3 239.2 221.6Q239 223 238.1 225.6V263Q239 265.2 239.2 267Q239.3 268.9 239.3 271.1L235.9 285.1Q235.9 294.1 238.3 303Q240.7 311.9 241.2 321.1Q241.5 327.9 241.5 335.1Q241.5 342.2 241.7 349.4Q242 356.5 242.7 363.5Q243.4 370.4 245.6 376.9Q245.8 378.6 251.1 382.3Q256.3 385.9 262.8 389.7Q269.4 393.5 275.4 396.2Q281.3 399 283 399H290.5Q293.2 399 294.4 399.2Q295.6 399.3 297.3 400.3Q297.3 400.5 298.4 401.5Q299.5 402.4 301 403.8Q302.4 405.1 304 406.3Q305.6 407.5 306.8 408.3Q307.3 409.5 307.6 410.2Q308 410.9 308 412.2V412.9Q305.8 417.7 301.3 420.4Q296.8 423.1 291.5 424.3Q286.2 425.5 280.6 425.8Q275 426 270.4 426L251.9 422.6Q249.2 422.6 246.7 423.7Q244.1 424.8 241.2 424.8L221.1 419.2H218.2Q216.2 419.2 215.7 419.7Q205.3 420.9 194.8 423.4Q184.4 426 172.5 426Q167.6 426 160.5 425.8Q153.3 425.5 146.5 424.1Q139.7 422.6 134.9 419.6Q130 416.5 130 410.9Z"/>
+  </defs>
+
+  <!-- 底：晨光水彩 + 纸纹 -->
+  <g clip-path="url(#tileClip)">
+    <rect x="16" y="16" width="480" height="480" fill="url(#tile)"/>
+    <rect x="16" y="16" width="480" height="480" fill="url(#glow)"/>
+    <g filter="url(#wash)" opacity=".55">
+      <ellipse cx="430" cy="90" rx="120" ry="70" fill="#8FB0C9"/>
+      <ellipse cx="70" cy="470" rx="140" ry="70" fill="#D79AA2" opacity=".6"/>
+      <ellipse cx="460" cy="470" rx="130" ry="60" fill="#9DB46E" opacity=".7"/>
+    </g>
+    <rect x="16" y="16" width="480" height="480" fill="#000" filter="url(#paper)" opacity=".5"/>
+  </g>
+  <rect x="18" y="18" width="476" height="476" rx="102" fill="none" stroke="#5A3A24" stroke-opacity=".35" stroke-width="3" filter="url(#etch)"/>
+
+  <!-- 字：外面一圈描金，里面朱红水彩，最后墨线 -->
+  <use href="#P" fill="#E9C46A" stroke="#E9C46A" stroke-width="20" stroke-linejoin="round" filter="url(#gild)" opacity=".85"/>
+  <use href="#P" fill="#F6E7C2"/>
+  <use href="#P" fill="url(#ink)" filter="url(#tint)"/>
+  <use href="#P" fill="none" stroke="#3A2214" stroke-width="5.5" stroke-linejoin="round" filter="url(#etch)"/>
+
+  <!-- 藤蔓：从字右脚的衬线上长出来，往右卷一下，再绕过字碗的右边爬上去，在顶上开花 -->
+  <g filter="url(#etch)" stroke-linecap="round" fill="none">
+    <path d="M300 416C336 424 372 446 404 434C432 424 450 400 440 378C428 346 400 334 404 300C408 266 446 252 444 214C442 178 410 168 414 132C417 106 430 96 424 80" stroke="#5D6F2C" stroke-width="6.5"/>
+    <path d="M404 434C424 456 456 462 460 444C463 432 450 428 446 436" stroke="#5D6F2C" stroke-width="4"/>
+    <path d="M420 146C448 134 466 152 456 168C448 178 434 170 440 162" stroke="#5D6F2C" stroke-width="3.6"/>
+    <g stroke="#3A2A1F" stroke-width="2.4">
+      <path d="M350 430c-4 22 8 40 26 40 4-20-8-36-26-40z" fill="#86A44A"/>
+      <path d="M438 362c-22-10-44-4-50 14 22 10 42 4 50-14z" fill="#7E9C46"/>
+      <path d="M406 298c16-16 40-18 54-6-14 16-38 18-54 6z" fill="#97B058"/>
+      <path d="M442 222c-20-12-26-34-14-50 20 10 26 32 14 50z" fill="#7E9C46"/>
+      <path d="M414 112c-20-4-34-20-30-38 20 2 32 18 30 38z" fill="#86A44A"/>
+    </g>
+    <!-- 花 -->
+    <g stroke="#3A2A1F" stroke-width="2.2">
+      <g fill="#E8A3B0">
+        <ellipse cx="424" cy="48" rx="11" ry="16"/>
+        <ellipse cx="424" cy="48" rx="11" ry="16" transform="rotate(72 424 64)"/>
+        <ellipse cx="424" cy="48" rx="11" ry="16" transform="rotate(144 424 64)"/>
+        <ellipse cx="424" cy="48" rx="11" ry="16" transform="rotate(216 424 64)"/>
+        <ellipse cx="424" cy="48" rx="11" ry="16" transform="rotate(288 424 64)"/>
+      </g>
+      <circle cx="424" cy="64" r="8" fill="#E2B54C"/>
+    </g>
+  </g>
+  <!-- 一颗星 -->
+  <path d="M82 70l7 18 18 7-18 7-7 18-7-18-18-7 18-7z" fill="#F2C95A" stroke="#4A2216" stroke-width="2.6" stroke-linejoin="round" filter="url(#etch)"/>
+</svg>

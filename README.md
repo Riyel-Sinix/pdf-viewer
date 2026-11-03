@@ -53,6 +53,9 @@
   - 文本、Markdown、CSV / TSV、网页（桌面版，.html、.mht 网页存档）：排好版后在看不见的窗口里打印成 PDF。A4，页脚有页码；Markdown 和网页的标题变成书签；
     文本自动认 UTF-8 / GBK；代码用等宽字体，长行自动换行；CSV 的表头每页都有，列多时自动横排。网页打印时不运行里面的脚本、也不会跳到别的网址。
   - 几个文件一起转：可以合成一份（按文件名排序；混着放时每个文件一个书签，原来的书签收在它下面），也可以每个文件一份。拖进合并页的图片、文档会先转成 PDF 再加入。
+  - **右键菜单**（桌面版）：在资源管理器里右键图片、Office 文档、Markdown、CSV、网页或 .txt，点「转成 PDF」，转好直接存在原文件旁边（同名的 PDF 已经有了就存成「名字 (1).pdf」，不覆盖），
+    再在程序里打开；可以多选（一次最多 100 个），程序没开着也行。安装版装好就有，免安装版在 ⋯ 菜单里打开「资源管理器右键菜单里的「转成 PDF」」；
+    都可以在那里关掉（关掉后重新安装也不会再加回来）。Windows 11 上它在右键菜单的「显示更多选项」里。原文件夹存不进去时（只读之类），转好的开成没保存的标签页。
   - 网页版只能转图片（Office、文本、网页的转换要靠本机的 Office 和 WebView2）。
 - **桌面集成**：可设为 .pdf 的默认打开方式；程序开着时再从资源管理器打开 PDF，会在同一个窗口里开新标签页；文件可直接拖进窗口。
 
@@ -74,8 +77,8 @@
 | `src/js/platform.js` | 桌面版 / 网页版的差别（读写文件、对话框、窗口按钮） |
 | `src/vendor/` | pdf.js 6.4.299、pdf-lib 1.17.1、marked 18.1.2（`npm run vendor` 从 node_modules 拷过来） |
 | `src/assets/` | 字体子集、纸纹、45 幅原版插图、图标 |
-| `src-tauri/` | 桌面外壳（Rust）：文件读写、系统对话框、单实例、文件关联；`src/convert.rs` 是转换里靠本机的部分（Office 转换、隐藏窗口打印成 PDF、WIC 解码图片），`src/office.ps1` 是驱动 Office / WPS / LibreOffice 的 PowerShell 脚本 |
-| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs`（桌面版冒烟测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
+| `src-tauri/` | 桌面外壳（Rust）：文件读写、系统对话框、单实例、文件关联；`src/convert.rs` 是转换里靠本机的部分（Office 转换、隐藏窗口打印成 PDF、WIC 解码图片），`src/office.ps1` 是驱动 Office / WPS / LibreOffice 的 PowerShell 脚本；`src/shell_menu.rs` 是资源管理器右键菜单（写当前用户的注册表），`windows/hooks.nsh` 让安装包装好时加上、卸载时删掉 |
+| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs` / `shell-menu-smoke.mjs`（桌面版冒烟测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
 | `docs/` | README 里的截图 |
 
 ## 构建
@@ -90,10 +93,13 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
 
 - 只想在浏览器里看界面：`node tools/serve.mjs`，然后打开 http://127.0.0.1:8780/ （`/__test/` 下是 `.cache/test` 里的测试 PDF，用 `python -P tools/make-test-pdfs.py` 生成）。
 - 字体：霞鹜文楷取 GB2312 全部汉字 + 界面用到的字，`python -P tools/fonts.py`（源字体放 `.cache/fonts/`）；子集化后的字体内部改名为 Songs Han / Songs Fell（两套字体都有 OFL 保留字体名）。文件名里的生僻字会退回系统楷体。
-- 图标：`tools/icon/book-blake.svg` 用无头 Edge 渲染成 1024px 的 PNG，再 `npx tauri icon tools/icon/icon-1024.png -o src-tauri/icons`。
+- 图标：手工上色风格的首字母「P」，字形取自界面字体 IM FELL English。`python -P tools/icon/make-icon.py` 生成 `tools/icon/p-blake.svg`（完整版）和 `p-blake-small.svg`（16–32 像素用的简化版），
+  用无头 Edge 渲染，再 `npx tauri icon` 出全套；`icon.ico` 里 16–32 像素放简化版（细藤蔓缩小了会糊），界面左上角的 `src/assets/icon-*.png` 也一起生成。
 - 自动化测试：设环境变量 `PDFVIEWER_TEST_OFFSCREEN=1`，窗口会开在屏幕外、不抢焦点。`node tools/desktop-smoke.mjs` 跑一遍桌面版（打开、合并、编辑、存盘、整理页面、签名、粘贴、关窗确认），截图在 `.cache/shots/`。
 - 转换测试：`python -P tools/make-convert-tests.py` 在 `.cache/test/convert/` 生成各种格式的测试文件（要 Pillow、python-docx、openpyxl；PPT 用本机的 PowerPoint 生成，没装就跳过），
   再 `node tools/convert-smoke.mjs`（拖放转换、合成一份、拖进合并页、存盘、隐藏窗口有没有关掉）。本机没装 Office / WPS / LibreOffice 时 Office 那几项跳过。
+- 右键菜单测试：`node tools/shell-menu-smoke.mjs`（安装程序用的注册 / 删除、像多选那样同时启动好几个 `--convert`、同名不覆盖、存不进去时的退路、⋯ 菜单的开关）。
+  测试时程序把注册表写在单独的 `HKCU\Software\PDFViewerTest` 下、单实例也换了名字，不碰真正的右键菜单、不会转进用户正开着的窗口，测完删掉。
 - README 截图：`python -P tools/make-showcase-pdf.py`（用插图和诗生成两册示例），再 `node tools/screenshots.mjs`，结果在 `docs/`。画笔、文字批注用 DevTools 的 `Input.dispatchMouseEvent` 发真正的鼠标事件——pdf.js 按事件的 offsetX/offsetY 定位，网页里自己造的指针事件位置不准。
 - 浏览器预览里测编辑：`import('/__test/helpers.js')` 有画批注、喂文件选择框、拦下载的小工具；`PUT /__out/名字` 会把页面里生成的文件存到 `.cache/out/`，方便用 PyMuPDF（`python -P`）检查。
 - 注意：pdf-lib 1.17 的 `removePage` 不刷新页面缓存（`getPages()` 还带着删掉的页），所以两个 worker 都把「删掉临时加的那一页」放在最后做。

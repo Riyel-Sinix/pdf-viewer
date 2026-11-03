@@ -84,11 +84,24 @@ export function openExternal(url) {
   else window.open(url, '_blank', 'noopener,noreferrer');
 }
 export function revealInFolder(path) { if (isDesktop && path) invoke('reveal_in_folder', { path }).catch(() => {}); }
-export async function pathsExist(paths) { return isDesktop && paths.length ? invoke('paths_exist', { paths }) : paths.map(() => true); }
-export async function takeInitialFiles() { return isDesktop ? (await invoke('take_initial_files')).map(entryFromPath) : []; }
+// any：文件夹也算存在（找不重名的文件名时用）
+export async function pathsExist(paths, { any = false } = {}) { return isDesktop && paths.length ? invoke('paths_exist', { paths, any }) : paths.map(() => true); }
+// 程序外面交过来的文件：启动参数里的，和开着时再从资源管理器打开 / 右键「转成 PDF」的（单实例插件转过来）。
+// 都先存在 Rust 那边，来一批发一次 files-pending 通知页面来取（页面还没载完时发的通知会丢，文件不会）。
+// open：要打开的；convert：右键菜单「转成 PDF」，转好存到源文件旁边
+export async function takePendingFiles() {
+  if (!isDesktop) return { open: [], convert: [] };
+  const p = await invoke('take_pending_files');
+  return { open: p.open.map(entryFromPath), convert: p.convert.map(entryFromPath) };
+}
+// 先订上通知再取第一批：中间转过来的不会漏
+export async function onFilesPending(cb) { if (isDesktop) await T.event.listen('files-pending', () => cb()); }
 
-// 已经开着时，再从资源管理器「打开方式」或命令行打开 PDF：单实例插件把路径转发过来
-export function onExternalOpen(cb) { if (isDesktop) T.event.listen('open-files', e => cb((e.payload || []).map(entryFromPath))); }
+// 资源管理器右键菜单里的「转成 PDF」（src-tauri/src/shell_menu.rs）：{ installed, current, exts }
+export const shellMenu = {
+  status: () => (isDesktop ? invoke('shell_menu_status') : Promise.resolve(null)),
+  set: on => invoke('set_shell_menu', { on }),
+};
 
 // 桌面版的拖放由系统接管（能拿到路径）；返回 false 表示要用网页的 HTML5 拖放。位置换算成 CSS 像素
 export function onNativeDragDrop({ enter, leave, drop }) {
