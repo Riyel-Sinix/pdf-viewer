@@ -2,10 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PDF 查看器",
   "mainBinaryName": "pdf-viewer",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "identifier": "com.siiocc.pdfviewer",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../src",
+    "beforeBuildCommand": "node tools/build-shell-menu.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -22,6 +23,10 @@
     "copyright": "Copyright © 2026 Riyel-Sinix（MIT 许可证）；插图：William Blake《天真与经验之歌》Copy Z，公有领域",
     "shortDescription": "PDF 查看器",
     "longDescription": "布莱克《天真与经验之歌》插画风格的 PDF 查看器：阅读、查找、打印，批注、签名、整理页面，合并 PDF，把图片、Office 文档、文本和网页转成 PDF。",
+    "resources": {
+      "target/shell-menu/release/pdf_viewer_shell.dll": "shell-menu/pdf_viewer_shell.dll",
+      "target/shell-menu/PDFViewer.ShellMenu.msix": "shell-menu/PDFViewer.ShellMenu.msix"
+    },
     "fileAssociations": [
       { "ext": ["pdf"], "name": "PDF", "description": "PDF 文档", "role": "Viewer", "mimeType": "application/pdf" }
     ],

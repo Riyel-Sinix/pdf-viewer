@@ -1,7 +1,7 @@
 {
   "name": "pdf-viewer",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "布莱克《天真与经验之歌》插画风格的 PDF 查看器（Tauri）",
   "type": "module",
   "scripts": {

@@ -90,13 +90,16 @@ fn take_pending_files(state: State<'_, PendingFiles>) -> Pending {
 }
 
 #[tauri::command]
-fn shell_menu_status() -> Result<shell_menu::Status, String> {
-    Ok(shell_menu::status(&std::env::current_exe().map_err(|e| e.to_string())?))
+async fn shell_menu_status() -> Result<shell_menu::Status, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // 要问系统登记了哪些包，放到别的线程，别卡住界面
+    tauri::async_runtime::spawn_blocking(move || shell_menu::status(&exe)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn set_shell_menu(on: bool) -> Result<shell_menu::Status, String> {
-    shell_menu::set(&std::env::current_exe().map_err(|e| e.to_string())?, on)
+async fn set_shell_menu(on: bool) -> Result<shell_menu::Status, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || shell_menu::set(&exe, on)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -222,10 +225,17 @@ fn paths_exist(paths: Vec<String>, any: Option<bool>) -> Vec<bool> {
 pub fn run() {
     // 安装程序在装好、卸载前调用：只改右键菜单，不开窗口（在单实例之前处理，不会转给开着的窗口）
     let args: Vec<String> = std::env::args().collect();
-    for (flag, register) in [("--register-shell-menu", true), ("--unregister-shell-menu", false)] {
-        if args.iter().any(|a| a == flag) {
-            std::process::exit(shell_menu::from_installer(register));
-        }
+    let installer = args.iter().find_map(|a| match a.as_str() {
+        "--register-shell-menu" => Some(shell_menu::from_installer(true)),
+        "--unregister-shell-menu" => Some(shell_menu::from_installer(false)),
+        // Windows 11 第一层菜单的包：要不要登记、（以管理员身份）登记、卸载前去掉，见 shell_menu.rs 和 windows/hooks.nsh
+        "--shell-package-needed" => Some(shell_menu::package_needed()),
+        "--add-shell-package" => Some(shell_menu::add_package()),
+        "--remove-shell-package" => Some(shell_menu::remove_package()),
+        _ => None,
+    });
+    if let Some(code) = installer {
+        std::process::exit(code);
     }
     let initial = launch_files(args, None);
     let mut context = tauri::generate_context!();

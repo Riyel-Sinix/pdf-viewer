@@ -402,7 +402,7 @@ async function toggleShellMenu() {
   const on = !shellMenuState?.current;
   try {
     shellMenuState = await platform.shellMenu.set(on);
-    toast(on ? '加好了：在资源管理器里右键图片、Office 文档、文本或网页，点「转成 PDF」，转好的存在原文件旁边（Windows 11 在「显示更多选项」里）'
+    toast(on ? `加好了：在资源管理器里右键图片、Office 文档、文本或网页，点「转成 PDF」，转好的存在原文件旁边${shellMenuState?.modern ? '' : '（Windows 11 在「显示更多选项」里）'}`
       : '右键菜单里的「转成 PDF」去掉了', { kind: 'ok', ms: on ? 10000 : 5000 });
   } catch (e) { toast('改不了右键菜单：' + (e?.message || e), { kind: 'err' }); }
 }

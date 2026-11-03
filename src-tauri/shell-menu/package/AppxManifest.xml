@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PDF 查看器在 Windows 11 右键菜单第一层的「转成 PDF」：稀疏包。程序本身不在包里，在 ExternalLocation（安装文件夹），
+     包里只有这份清单和图标；它把 shell-menu\pdf_viewer_shell.dll（src-tauri/shell-menu）登记成资源管理器的 IExplorerCommand。
+     tools/build-shell-menu.mjs 按 identity.json 填好 {NAME}、{PUBLISHER}、{VERSION}、{CLSID} 后用 makeappx 打包。没有签名：Publisher 带微软规定的 OID，
+     安装时 Add-AppxPackage -AllowUnsigned（要管理员，见 src-tauri/windows/shell-menu.ps1） -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap10 desktop4 desktop5 desktop6 com rescap">
+  <Identity Name="{NAME}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64"/>
+  <Properties>
+    <DisplayName>PDF 查看器（右键菜单）</DisplayName>
+    <PublisherDisplayName>Riyel-Sinix</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+    <!-- 从右键菜单启动的程序会带着这个包的身份；不关掉的话它新写进 AppData 的东西（数据、设置、临时文件）会被重定向进
+         包自己的文件夹，和平时打开的程序不是同一份。这个包只是让资源管理器能启动普通安装的程序，所以关掉（要 unvirtualizedResources）。
+         tools/shell-menu-e2e.mjs 会查 AppData 和临时文件夹。注册表那条在 Windows 11（26300）上实测不起作用（写进 HKCU 的仍被重定向，
+         Windows 11 点名排除键的写法也一样），所以程序从右键菜单启动时不靠写注册表：装了这个包时右键菜单开关只用 AppData 里的标记文件 -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+  <Resources>
+    <Resource Language="zh-CN"/>
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust"/>
+    <rescap:Capability Name="unvirtualizedResources"/>
+  </Capabilities>
+  <Applications>
+    <Application Id="PDFViewer" Executable="pdf-viewer.exe" uap10:TrustLevel="mediumIL" uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements AppListEntry="none" DisplayName="PDF 查看器" Description="资源管理器右键菜单里的「转成 PDF」"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png"/>
+      <Extensions>
+        <!-- 所有文件都登记，能不能转由 DLL 的 GetState 按扩展名判断（和旧式右键菜单同一份列表） -->
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+            <desktop5:ItemType Type="*">
+              <desktop5:Verb Id="ConvertToPdf" Clsid="{CLSID}"/>
+            </desktop5:ItemType>
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="PDF 查看器右键菜单">
+              <com:Class Id="{CLSID}" Path="shell-menu\pdf_viewer_shell.dll" ThreadingModel="STA"/>
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

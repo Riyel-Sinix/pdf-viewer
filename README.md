@@ -55,7 +55,8 @@
   - 几个文件一起转：可以合成一份（按文件名排序；混着放时每个文件一个书签，原来的书签收在它下面），也可以每个文件一份。拖进合并页的图片、文档会先转成 PDF 再加入。
   - **右键菜单**（桌面版）：在资源管理器里右键图片、Office 文档、Markdown、CSV、网页或 .txt，点「转成 PDF」，转好直接存在原文件旁边（同名的 PDF 已经有了就存成「名字 (1).pdf」，不覆盖），
     再在程序里打开；可以多选（一次最多 100 个），程序没开着也行。安装版装好就有，免安装版在 ⋯ 菜单里打开「资源管理器右键菜单里的「转成 PDF」」；
-    都可以在那里关掉（关掉后重新安装也不会再加回来）。Windows 11 上它在右键菜单的「显示更多选项」里。原文件夹存不进去时（只读之类），转好的开成没保存的标签页。
+    都可以在那里关掉（关掉后重新安装也不会再加回来）。原文件夹存不进去时（只读之类），转好的开成没保存的标签页。
+    Windows 11 上，安装时会问一次管理员权限（UAC）：同意了，「转成 PDF」就在右键菜单第一层；不同意、静默安装或免安装版，它在「显示更多选项」里。
   - 网页版只能转图片（Office、文本、网页的转换要靠本机的 Office 和 WebView2）。
 - **桌面集成**：可设为 .pdf 的默认打开方式；程序开着时再从资源管理器打开 PDF，会在同一个窗口里开新标签页；文件可直接拖进窗口。
 
@@ -77,19 +78,25 @@
 | `src/js/platform.js` | 桌面版 / 网页版的差别（读写文件、对话框、窗口按钮） |
 | `src/vendor/` | pdf.js 6.4.299、pdf-lib 1.17.1、marked 18.1.2（`npm run vendor` 从 node_modules 拷过来） |
 | `src/assets/` | 字体子集、纸纹、45 幅原版插图、图标 |
-| `src-tauri/` | 桌面外壳（Rust）：文件读写、系统对话框、单实例、文件关联；`src/convert.rs` 是转换里靠本机的部分（Office 转换、隐藏窗口打印成 PDF、WIC 解码图片），`src/office.ps1` 是驱动 Office / WPS / LibreOffice 的 PowerShell 脚本；`src/shell_menu.rs` 是资源管理器右键菜单（写当前用户的注册表），`windows/hooks.nsh` 让安装包装好时加上、卸载时删掉 |
-| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs` / `shell-menu-smoke.mjs`（桌面版冒烟测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
+| `src-tauri/` | 桌面外壳（Rust）：文件读写、系统对话框、单实例、文件关联；`src/convert.rs` 是转换里靠本机的部分（Office 转换、隐藏窗口打印成 PDF、WIC 解码图片），`src/office.ps1` 是驱动 Office / WPS / LibreOffice 的 PowerShell 脚本；`src/shell_menu.rs` 是资源管理器右键菜单（旧式的写当前用户的注册表；Windows 11 第一层的登记、去掉包），`windows/hooks.nsh` 让安装包装好时加上、卸载时删掉；`shell-menu/` 是 Windows 11 右键菜单第一层的组件（IExplorerCommand 的 DLL、稀疏包清单，包的身份在 `package/identity.json`） |
+| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs` / `shell-menu-smoke.mjs`（桌面版冒烟测试）、`build-shell-menu.mjs`（编译 Windows 11 右键组件、打包成 .msix）/ `shell-menu-e2e.mjs`（它的端到端测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
 | `docs/` | README 里的截图 |
 
 ## 构建
 
-需要 Node.js、Rust（MSVC 工具链）。编译缓存在 `src-tauri/target/`。
+需要 Node.js、Rust（MSVC 工具链）、Windows SDK（打 Windows 11 右键菜单的 .msix 要用里面的 makeappx，Visual Studio 生成工具里勾「Windows SDK」）。编译缓存在 `src-tauri/target/`。
 
 ```bash
 npm install
 npm run vendor          # 升级 pdf.js / pdf-lib / marked 后重跑
 npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 bundle/nsis/ 下的安装包
 ```
+
+`npx tauri build` 先自动跑 `node tools/build-shell-menu.mjs`：编译右键组件 DLL（`src-tauri/shell-menu`），把稀疏包清单打成 `PDFViewer.ShellMenu.msix`，
+安装包把两样都放进安装文件夹的 `shell-menu\`。这个包没签名（发布者带微软规定的 OID），是 Windows 11 给「没签名的包」开的口子：
+登记要管理员，按微软的说法包会装给这台电脑的所有用户，微软建议只用来测试、不要大范围分发。所以只在安装时问一次，用户拒绝就退回旧式菜单；
+登记、去掉的结果记在 `%TEMP%\pdf-viewer-shell-menu.log`。只有改了 `AppxManifest.xml` 才要把 `identity.json` 的 version 加一，
+安装包看到登记的版本不同才会重新登记（再问一次管理员）；程序和 DLL 更新不用改它。
 
 - 只想在浏览器里看界面：`node tools/serve.mjs`，然后打开 http://127.0.0.1:8780/ （`/__test/` 下是 `.cache/test` 里的测试 PDF，用 `python -P tools/make-test-pdfs.py` 生成）。
 - 字体：霞鹜文楷取 GB2312 全部汉字 + 界面用到的字，`python -P tools/fonts.py`（源字体放 `.cache/fonts/`）；子集化后的字体内部改名为 Songs Han / Songs Fell（两套字体都有 OFL 保留字体名）。文件名里的生僻字会退回系统楷体。
@@ -100,6 +107,9 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
   再 `node tools/convert-smoke.mjs`（拖放转换、合成一份、拖进合并页、存盘、隐藏窗口有没有关掉）。本机没装 Office / WPS / LibreOffice 时 Office 那几项跳过。
 - 右键菜单测试：`node tools/shell-menu-smoke.mjs`（安装程序用的注册 / 删除、像多选那样同时启动好几个 `--convert`、同名不覆盖、存不进去时的退路、⋯ 菜单的开关）。
   测试时程序把注册表写在单独的 `HKCU\Software\PDFViewerTest` 下、单实例也换了名字，不碰真正的右键菜单、不会转进用户正开着的窗口，测完删掉。
+- Windows 11 第一层右键菜单的测试：`node tools/build-shell-menu.mjs --test && node tools/shell-menu-e2e.mjs`（要 Windows 11、开开发者模式，先 `npx tauri build`）。
+  用测试专用的包名和 CLSID 登记一个稀疏包，像资源管理器那样通过 COM 代理调「转成 PDF」，看程序收到的参数、它写的文件落没落在平常的位置；
+  再换上真正的程序试安装包用的 `--shell-package-needed` / `--register-shell-menu` / `--add-shell-package` / `--remove-shell-package`。要管理员的那一步只能用安装包测。
 - README 截图：`python -P tools/make-showcase-pdf.py`（用插图和诗生成两册示例），再 `node tools/screenshots.mjs`，结果在 `docs/`。画笔、文字批注用 DevTools 的 `Input.dispatchMouseEvent` 发真正的鼠标事件——pdf.js 按事件的 offsetX/offsetY 定位，网页里自己造的指针事件位置不准。
 - 浏览器预览里测编辑：`import('/__test/helpers.js')` 有画批注、喂文件选择框、拦下载的小工具；`PUT /__out/名字` 会把页面里生成的文件存到 `.cache/out/`，方便用 PyMuPDF（`python -P`）检查。
 - 注意：pdf-lib 1.17 的 `removePage` 不刷新页面缓存（`getPages()` 还带着删掉的页），所以两个 worker 都把「删掉临时加的那一页」放在最后做。
