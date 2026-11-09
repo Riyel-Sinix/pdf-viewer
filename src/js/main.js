@@ -7,7 +7,8 @@ import * as platform from './platform.js';
 import { toast, showMenu, closeMenu, dialogOpen, closeDialog, openDialog, dlgHead } from './ui.js';
 import { Reader, loadPdf, renderThumb, pdfErrorText, destroyPdf, docInfo, EditMode, ZOOM_PRESETS, ZOOM_LEVELS, ScrollMode, SpreadMode } from './reader.js';
 import { Merger } from './merge.js';
-import { renderHome, renderDayplate } from './home.js';
+import { renderHome } from './home.js';
+import { renderBackdrop, openBackdropPicker } from './backdrop.js';
 import { createVines } from './vines.js';
 import { EditBar } from './editbar.js';
 import { Organizer, organizerOpen, buildPages } from './organize.js';
@@ -76,6 +77,7 @@ function homeActions() {
     merge: () => openMerge(),
     convert: () => convertFlow(),
     openRecent: path => openEntries([platform.entryFromPath(path)]),
+    backdrop: () => openBackdropPicker(),
   };
 }
 function activate(id) {
@@ -678,6 +680,7 @@ function moreItems() {
     '-',
     { label: '演示模式', icon: 'present', kbd: 'F5', disabled: !t, act: () => reader.enterPresentation() },
     { label: '全屏', icon: 'fitPage', kbd: 'F11', act: () => toggleFullscreen() },
+    { label: '换背景…', icon: 'backdrop', act: () => openBackdropPicker() },
     '-',
     { label: '打印…', icon: 'print', kbd: 'Ctrl+P', disabled: !t, act: () => reader.print() },
     { label: '提取 / 合并页面…', icon: 'bind', disabled: !t, act: () => extractCurrent() },
@@ -742,6 +745,15 @@ $('#thumbs').addEventListener('contextmenu', e => {
   ]);
 });
 document.addEventListener('contextmenu', e => { if (!e.target.closest('input,textarea,[contenteditable="true"]')) e.preventDefault(); });
+// 首页空白处右键：换背景、换主题
+$('#home').addEventListener('contextmenu', e => {
+  if (e.target.closest('.act,.rc,.colophon,.bgfab,button,a')) return;
+  e.preventDefault();
+  showMenu({ x: e.clientX, y: e.clientY }, [
+    { label: '换背景…', icon: 'backdrop', act: () => openBackdropPicker() },
+    { label: getTheme() === 'dark' ? '换成天真之歌（日间）' : '换成经验之歌（夜间）', icon: 'theme', act: () => toggleTheme() },
+  ]);
+});
 
 /* ---------- 主题 / 全屏 / 窗口按钮 ---------- */
 function toggleTheme() {
@@ -952,15 +964,16 @@ async function takePending() {
 (async function init() {
   renderTabs();
   activate('home');
+  renderBackdrop();
   updateToolbar();
   syncMax();
   requestAnimationFrame(() => requestAnimationFrame(() => platform.win.showIfHidden().catch(() => {})));
   try { await platform.onFilesPending(takePending); } catch (e) { console.warn(e); }
   takePending();
   platform.shellMenu.status().then(s => { shellMenuState = s; }).catch(() => {});
-  // 每天零点（北京时间）换一首诗
-  setInterval(() => renderDayplate(), 10 * 60e3);
+  // 默认背景「今日之诗」每天零点（北京时间）换一幅
+  setInterval(() => renderBackdrop(), 10 * 60e3);
 })();
 
 // 调试 / 自动化测试用：在控制台里可以拿到这些对象
-Object.assign(window, { __pv: { state, reader, merger, editbar, organizer, openEntries, activate, saveTab, rebuildPages, quickPages, undo, redo, isDirty, getBytes, convertAndOpen, handleDrop } });
+Object.assign(window, { __pv: { state, reader, merger, editbar, organizer, openEntries, activate, saveTab, rebuildPages, quickPages, undo, redo, isDirty, getBytes, convertAndOpen, handleDrop, renderBackdrop, openBackdropPicker } });

@@ -1,6 +1,6 @@
 // README 用的截图：node tools/screenshots.mjs [exe 路径]
 // 先跑 python -P tools/make-showcase-pdf.py 生成《天真之歌》《经验之歌》两册示例（公有领域）；
-// 「转成 PDF」那两张要再跑 python -P tools/make-convert-tests.py（没有就跳过）。
+// 「转成 PDF」那两张要再跑 python -P tools/make-convert-tests.py（没有就跳过）；最后两张是背景（水彩、夜间）。
 // 和冒烟测试一样，窗口开在屏幕外、不抢焦点（不截桌面），通过 WebView2 的 DevTools 协议摆好场景、截图，
 // 再用 PyMuPDF 缩小转成 JPEG 放到 docs/
 import { spawn, execFileSync } from 'node:child_process';
@@ -215,6 +215,27 @@ try {
     })()`, 180000);
     if (n) await shot('converted');
   }
+
+  // 7. 背景：首页换成水彩「玫瑰与新月」，选择框开着；再换「乡间小路」、切到夜间（经验之歌），画压暗成夜色
+  await evaluate(`(async () => {
+    const S = __s;
+    __pv.activate('home'); await S.sleep(400);
+    document.querySelectorAll('.toast').forEach(x => x.remove());
+    __pv.openBackdropPicker(); await S.sleep(800);
+    document.querySelector('#dlg .bgt[data-bg=roses]').click(); await S.sleep(2400);
+    document.activeElement?.blur();
+    return true;
+  })()`);
+  await shot('backdrop');
+  await evaluate(`(async () => {
+    const S = __s;
+    document.querySelector('#dlg .bgt[data-bg=lane]').click(); await S.sleep(300);
+    document.querySelector('#dlg [data-dlg=ok]').click();
+    document.querySelector('#tbTheme').click(); await S.sleep(3200);
+    return true;
+  })()`);
+  await shot('backdrop-night');
+  await evaluate(`document.querySelector('#tbTheme').click(), true`);
 } catch (e) {
   ok = false;
   console.error('截图失败：', e.message);

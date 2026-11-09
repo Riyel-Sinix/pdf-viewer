@@ -42,6 +42,7 @@
   --shadow:0 22px 44px -22px rgba(0,0,0,.7);
   --page-shadow:0 0 0 1px rgba(0,0,0,.55),0 12px 30px -8px rgba(0,0,0,.8);
   --vine:#8E6C52;--grain:.35;--ink-on:#1A1420;--btn:#C8642A;
+  --night:linear-gradient(180deg,#22385F 0%,#2A2C48 50%,#4A2A2A 100%);
 }
 
 html,body{height:100%;overflow:hidden}
@@ -62,7 +63,7 @@ svg{display:block}
 .defs{position:absolute;width:0;height:0}
 *{scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
 
-/* 今日之诗的插图：铺在最底层（阅读时淡下去） */
+/* 背景（backdrop.js；默认是今日之诗的插图）：铺在最底层（阅读、合并时淡下去） */
 .dayplate{position:fixed;inset:0;z-index:-2;pointer-events:none;overflow:hidden;transition:opacity .8s ease}
 .dayplate .lay{position:absolute;inset:0;opacity:0;transition:opacity 1.4s ease}
 .dayplate .lay.on{opacity:1}
@@ -73,6 +74,20 @@ svg{display:block}
 [data-theme=dark] .dayplate .art{opacity:.24}
 body[data-view=doc] .dayplate{opacity:.28}
 body[data-view=merge] .dayplate{opacity:.55}
+/* 换成别的背景（backdrop.js）：Chrome 主题的水彩、自己的图片。横幅铺满窗口；竖幅按窗口高度居中、左右边缘淡出去，
+   两边露出主题的水彩晕染（自己的图片垫一张糊开的同一张图） */
+.dayplate .pic .art{opacity:.92;-webkit-mask-image:none;mask-image:none}
+.dayplate .pic .fill{inset:-10%;width:120%;height:120%;opacity:.85;filter:blur(40px)}
+.dayplate .fit-cover .fill{display:none}
+.dayplate .fit-cover .art{left:0;top:0;width:100%;height:100%;transform:none;object-fit:cover;object-position:50% 62%}
+.dayplate .fit-tall .art{-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+/* 夜间：压暗，再叠一层夜色（上面普鲁士蓝，下面炉火的暖色） */
+[data-theme=dark] .dayplate .pic{filter:brightness(.82) saturate(.9)}
+[data-theme=dark] .dayplate .pic::after{content:"";position:absolute;inset:0;background:var(--night);mix-blend-mode:multiply;opacity:.9}
+body[data-view=doc] .dayplate[data-kind=pic]{opacity:.55}
+body[data-view=merge] .dayplate[data-kind=pic]{opacity:.75}
+/* 直接写在画上的字（标签页、「最近打开」那一行）：画比插图浓，加一圈纸色的晕，免得看不清 */
+.dayplate[data-kind=pic]~.app :is(.tab:not(.on) .nm,.recent-h h2,.recent-h .lnk){text-shadow:0 0 3px var(--bg2),0 0 8px var(--bg2),0 0 16px var(--bg2)}
 
 /* 手绘水彩底：所有“版面”共用 */
 .panel{position:relative;isolation:isolate}
@@ -333,6 +348,11 @@ html:not(.desktop) .titlebar{padding-right:10px}
 .colophon .v{font-size:18px;line-height:1.7}
 .colophon .src{margin-top:10px;font-size:13.5px;color:var(--faint)}
 .colophon:hover .v{color:var(--text)}
+/* 右下角「背景」 */
+.bgfab{position:fixed;right:30px;bottom:24px;z-index:5;display:flex;align-items:center;gap:6px;height:34px;padding:0 15px 0 11px;border-radius:var(--pill);
+  background:var(--surface2);color:var(--muted);font-size:13.5px;box-shadow:0 0 0 1.2px var(--line),0 10px 22px -14px rgba(40,24,10,.6);transition:color .2s,box-shadow .2s,transform .25s}
+.bgfab svg{color:var(--ochre)}
+.bgfab:hover{color:var(--text);transform:translateY(-1px) rotate(-1deg);box-shadow:0 0 0 1.3px var(--edge),0 12px 24px -14px rgba(40,24,10,.6)}
 
 /* ---------- 合并 PDF ---------- */
 .merge{overflow:auto;overscroll-behavior:contain}
@@ -526,6 +546,41 @@ dialog.cvdlg{width:min(540px,94vw)}
 .field input{height:38px;padding:0 12px;border:1.3px solid var(--line);border-radius:var(--hand2);background:var(--surface2);outline:none;font-size:15px}
 .field input:focus{border-color:var(--accent)}
 .field .err{font-size:13px;color:var(--red);min-height:1.2em}
+/* 背景选择框（backdrop.js）：遮罩很淡，点了马上看得到换上的样子；小图的样子和真正铺上去的一致 */
+dialog.bgdlg{width:min(612px,94vw)}
+dialog.bgdlg::backdrop{background:rgba(30,20,10,.08);backdrop-filter:none}
+.bgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px;margin-top:16px}
+.bgrid.busy{pointer-events:none;opacity:.6}
+.bgt{position:relative;display:flex;flex-direction:column;gap:1px;min-width:0;padding:6px 6px 8px;border-radius:var(--hand2);text-align:left;transition:background .2s,box-shadow .2s,transform .25s}
+.bgt:nth-child(2n){border-radius:var(--hand)}
+.bgt:hover{background:var(--accent-soft);transform:translateY(-1px) rotate(-.4deg)}
+.bgt.on{background:var(--surface2);box-shadow:0 0 0 1.6px var(--ochre),0 10px 20px -14px rgba(40,24,10,.55)}
+.bgt .pv{position:relative;isolation:isolate;display:block;aspect-ratio:16/10;margin-bottom:6px;overflow:hidden;border-radius:5px 3px 6px 4px;background:var(--washes),var(--sky-bg);box-shadow:0 0 0 1px var(--edge)}
+.bgt .pv img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.bgt .pv::after{content:"";position:absolute;inset:0;background:url(../assets/paper.svg) 0 0/200px;opacity:var(--grain);mix-blend-mode:multiply;pointer-events:none}
+[data-theme=dark] .bgt .pv::after{mix-blend-mode:screen}
+/* 小图上的夜色淡一点、不叠纸纹：缩得这么小，照搬会糊成一片 */
+[data-theme=dark] .bgt .pv.pic::before{content:"";position:absolute;inset:0;z-index:1;background:var(--night);mix-blend-mode:multiply;opacity:.75}
+[data-theme=dark] .bgt .pv.pic::after{display:none}
+.bgt .pv::after,.bgt .pv.add svg{z-index:1}
+.bgt .pv.poem .fill{inset:-6%;width:112%;height:112%;opacity:.42}
+.bgt .pv.poem .art{left:50%;width:auto;height:100%;transform:translateX(-50%);opacity:.4;
+  -webkit-mask-image:radial-gradient(70% 62% at 50% 50%,#000 62%,transparent 100%);mask-image:radial-gradient(70% 62% at 50% 50%,#000 62%,transparent 100%)}
+[data-theme=dark] .bgt .pv.poem img{opacity:.3}
+.bgt .pv.pic img{opacity:.92}
+.bgt .pv.fit-tall img{left:50%;width:auto;transform:translateX(-50%);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+[data-theme=dark] .bgt .pv.pic img{filter:brightness(.95) saturate(.9)}
+.bgt .pv.add{display:grid;place-items:center;color:var(--ochre)}
+.bgt .pv.add svg{position:relative;padding:6px;box-sizing:content-box;border-radius:50% 45% 52% 48%;background:var(--surface2);box-shadow:0 0 0 1.2px var(--line)}
+.bgt .nm{display:flex;align-items:baseline;gap:6px;min-width:0;font-size:14px;font-weight:500;line-height:1.35;white-space:nowrap}
+.bgt .nm i{min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--serif);font-weight:400;font-size:12px;color:var(--ochre)}
+.bgt .nt{font-size:12px;line-height:1.4;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bgt .tick{position:absolute;top:11px;right:11px;width:22px;height:22px;display:none;place-items:center;border-radius:50% 45% 52% 48%;background:var(--ochre);color:var(--ink-on);box-shadow:0 0 0 2px var(--bg2)}
+.bgt.on .tick{display:grid}
+.bgt .chg{position:absolute;top:11px;left:11px;width:26px;height:26px;display:grid;place-items:center;border-radius:var(--hand2);background:var(--surface2);color:var(--ochre);box-shadow:0 0 0 1px var(--line);opacity:0;transition:opacity .2s}
+.bgt:hover .chg,.bgt:focus-visible .chg{opacity:1}
+.bgt .chg:hover{color:var(--text);box-shadow:0 0 0 1.3px var(--edge)}
 .poem-dlg{font-family:var(--serif);text-align:center}
 .poem-dlg img{display:block;max-height:min(44vh,360px);max-width:100%;margin:0 auto 14px;box-shadow:0 0 0 1px var(--edge),0 8px 22px rgba(0,0,0,.28)}
 .poem-dlg .pd-t{font-style:italic;font-size:25px;line-height:1.2;color:var(--ochre)}

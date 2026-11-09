@@ -2,7 +2,8 @@
 //   node tools/desktop-smoke.mjs [exe 路径]
 // 检查：启动时带的 PDF 能打开、控制台没有报错（含 CSP）、读写文件的 IPC、合并引擎（pdf.js worker + pdf-lib worker）、
 //       单实例转发（再启动一次会在原窗口开新标签）、拖放；编辑：批注（文字 / 画笔 / 高亮）存盘后重新载入、
-//       pdf.js 编辑器的中文、整理页面（后台线程 pdf-lib）和撤销、签名对话框、有没保存的修改时关窗会先问。
+//       pdf.js 编辑器的中文、整理页面（后台线程 pdf-lib）和撤销、签名对话框、有没保存的修改时关窗会先问；
+//       背景（选择框、打包进程序的水彩、自己的图片存进 IndexedDB 用 blob: 地址显示）。
 //       会弹系统对话框的操作（另存为、提取）不测，免得窗口跑到用户眼前。截图存到 .cache/shots/
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -272,6 +273,42 @@ try {
   await sleep(2600);
   await shot('desktop-4-merge-dark.png');
   await evaluate(`document.querySelector('#tbTheme').click()`);
+
+  // 11. 背景：默认是今日之诗；选择框六个选项、小图都载得出来；换成打包进程序的水彩；
+  //     自己的图片（文件选择框直接喂文件，不弹系统对话框）存进 IndexedDB，在应用的 CSP 下用 blob: 地址显示；选的记在偏好里
+  const bg = JSON.parse(await evaluate(`(async () => {
+    const S = __smoke, box = document.querySelector('#dayplate'), saved = () => JSON.parse(localStorage.getItem('pv.prefs') || '{}').backdrop;
+    const first = box.dataset.kind;
+    __pv.openBackdropPicker(); await S.sleep(800);
+    const tiles = [...document.querySelectorAll('#dlg .bgt')].map(b => b.dataset.bg);
+    const imgs = [...document.querySelectorAll('#dlg .bgt img')];
+    await Promise.all(imgs.map(i => i.decode().catch(() => {})));
+    const broken = imgs.filter(i => !i.naturalWidth).map(i => i.getAttribute('src'));
+    document.querySelector('#dlg .bgt[data-bg=roses]').click(); await S.sleep(2000);
+    const roses = { kind: box.dataset.kind, w: box.querySelector('.lay.on .art')?.naturalWidth || 0, on: document.querySelector('#dlg .bgt.on')?.dataset.bg, saved: saved() };
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 1800;
+    const g = c.getContext('2d'); g.fillStyle = '#3F6F95'; g.fillRect(0, 0, 1200, 1800);
+    const f = new File([await new Promise(r => c.toBlob(r, 'image/png'))], '竖图.png', { type: 'image/png' });
+    const orig = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function () {
+      if (this.type !== 'file') return orig.call(this);
+      HTMLInputElement.prototype.click = orig;
+      const dt = new DataTransfer(); dt.items.add(f); this.files = dt.files;
+      setTimeout(() => this.dispatchEvent(new Event('change')));
+    };
+    document.querySelector('#dlg .bgt[data-bg=custom]').click(); await S.sleep(2500);
+    HTMLInputElement.prototype.click = orig;
+    const lay = box.querySelector('.lay.on'), art = lay?.querySelector('.art');
+    const custom = { cls: lay?.className, scheme: art?.src.split(':')[0], w: art?.naturalWidth || 0, h: art?.naturalHeight || 0, saved: saved() };
+    document.querySelector('#dlg [data-dlg=ok]').click();
+    return JSON.stringify({ first, tiles, broken, roses, custom });
+  })()`));
+  check('背景：默认今日之诗，选择框六个选项、小图都在', bg.first === 'poem' && bg.tiles.join() === 'day,roses,lane,border,plain,custom' && bg.broken.length === 0, JSON.stringify({ first: bg.first, tiles: bg.tiles, broken: bg.broken }));
+  check('背景：换成水彩「玫瑰与新月」（打包进程序的图片），记在偏好里', bg.roses.kind === 'pic' && bg.roses.w === 2560 && bg.roses.on === 'roses' && bg.roses.saved === 'roses', JSON.stringify(bg.roses));
+  check('背景：自己的图片存进 IndexedDB、用 blob: 显示（竖幅居中）', /fit-tall/.test(bg.custom.cls || '') && bg.custom.scheme === 'blob' && bg.custom.w === 1200 && bg.custom.h === 1800 && bg.custom.saved === 'custom', JSON.stringify(bg.custom));
+  await evaluate(`(async () => { const { prefs, savePrefs } = await import('./js/store.js'); prefs.backdrop = 'roses'; savePrefs(); __pv.activate('home'); await __pv.renderBackdrop(); return true; })()`);
+  await sleep(1800);
+  await shot('desktop-9-backdrop.png');
 
   check('窗口始终在屏幕外、没最大化、没抢焦点', geo.every(g => g.x < -5000 && !g.max && !g.full && !g.focused), JSON.stringify(geo));
   const errs = logs.filter(l => /^\[(error|exception)\]/.test(l) || /Content Security Policy|Refused to/.test(l));

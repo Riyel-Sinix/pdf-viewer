@@ -1,4 +1,4 @@
-// 首页：书名页、三张卡片（打开 / 合并 / 转成 PDF）、最近打开、今日之诗（和课表站同一天同一首，背景是那首诗的 Copy Z 原版插图）
+// 首页：书名页、三张卡片（打开 / 合并 / 转成 PDF）、最近打开、今日之诗（和课表站同一天同一首；默认背景就是那首诗的 Copy Z 原版插图，见 backdrop.js），右下角「背景」
 import { $, esc, fmtWhen, fmtSize } from './util.js';
 import { icon, FLOURISH } from './icons.js';
 import { getRecent, removeRecent, clearRecent, getTheme } from './store.js';
@@ -16,23 +16,6 @@ const ORDER = (() => {                                         // 天真、经�
 export const todayPoem = () => ORDER[((dayNo(Date.now()) % ORDER.length) + ORDER.length) % ORDER.length];
 const bookOf = pm => pm.b === 'I' ? ['Songs of Innocence', 1789] : ['Songs of Experience', 1794];
 
-let shownPlate = '';
-export function renderDayplate() {
-  const pm = todayPoem();
-  if (pm.p === shownPlate) return;
-  shownPlate = pm.p;
-  const box = $('#dayplate'), url = `assets/plates/${pm.p}.jpg`, img = new Image();
-  img.onload = () => {
-    const lay = document.createElement('div');
-    lay.className = 'lay';
-    lay.innerHTML = `<img class="fill" src="assets/plates/s/${pm.p}.jpg" alt=""><img class="art" src="${url}" alt="">`;
-    box.querySelectorAll('.lay.on').forEach(o => { o.classList.remove('on'); setTimeout(() => o.remove(), 1500); });
-    box.append(lay);
-    requestAnimationFrame(() => requestAnimationFrame(() => lay.classList.add('on')));
-  };
-  img.src = url;
-}
-
 export function showPoem(pm = todayPoem()) {
   const [book, year] = bookOf(pm);
   openDialog({
@@ -43,7 +26,7 @@ export function showPoem(pm = todayPoem()) {
   });
 }
 
-/* actions: { open(), merge(), convert(), openRecent(path), } */
+/* actions: { open(), merge(), convert(), openRecent(path), backdrop() } */
 export function renderHome(actions) {
   const root = $('#home');
   const dark = getTheme() === 'dark';
@@ -88,7 +71,8 @@ export function renderHome(actions) {
         </button>`;
       }).join('')}</div></section>` : ''}
     <footer class="colophon" data-home="poem" title="读全诗">${FLOURISH}<div class="v">${lines.map(esc).join('<br>')}</div><div class="src">— ${esc(pm.t)}, ${book}, ${year}</div></footer>
-  </div>`;
+  </div>
+  <button class="bgfab" data-home="backdrop" title="换背景：今日之诗、水彩画、素纸，或者自己的图片">${icon('backdrop', 18)}<span>背景</span></button>`;
   root.onclick = e => {
     const rm = e.target.closest('[data-rm]');
     if (rm) { e.stopPropagation(); removeRecent(rm.dataset.rm); renderHome(actions); return; }
@@ -101,6 +85,7 @@ export function renderHome(actions) {
     else if (a === 'merge') actions.merge();
     else if (a === 'convert') actions.convert();
     else if (a === 'poem') showPoem();
+    else if (a === 'backdrop') actions.backdrop();
     else if (a === 'clear') { clearRecent(); renderHome(actions); }
   };
   // 文件被移走 / 删掉的，灰掉并标出来
@@ -115,5 +100,4 @@ export function renderHome(actions) {
       });
     }).catch(() => {});
   }
-  renderDayplate();
 }

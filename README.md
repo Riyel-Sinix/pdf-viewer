@@ -2,7 +2,7 @@
 
 威廉·布莱克《天真与经验之歌》插画风格的 PDF 查看器：阅读、批注、签名、整理页面、合并，还能把图片、Office 文档、文本和网页转成 PDF。
 日间是「天真之歌」（晨光、水彩、花叶藤蔓），夜间是「经验之歌」（深夜、荆棘、星与火焰），拱顶上坐着 Claude Code 的小螃蟹 Clawd；
-首页每天一首「今日之诗」，背景是那首诗的 Copy Z 原版插图（美国国会图书馆藏，公有领域）。
+首页每天一首「今日之诗」，背景默认是那首诗的 Copy Z 原版插图（美国国会图书馆藏，公有领域），也可以换成三幅水彩画、素纸或者自己的图片。
 
 ![阅读与批注：高亮、画笔、文字批注](docs/screenshot-reader.jpg)
 
@@ -26,6 +26,8 @@
 | ![签名：手写或打字](docs/screenshot-sign.jpg) | ![合并：把两册装订成一本](docs/screenshot-merge.jpg) |
 | **转成 PDF** | **转好的：几个文件合成一份，每个文件一个书签** |
 | ![转成 PDF：图片、Word、Markdown 一起转](docs/screenshot-convert.jpg) | ![转好的 PDF：Word 和 Markdown 的标题也变成了书签](docs/screenshot-converted.jpg) |
+| **背景：换成水彩「玫瑰与新月」** | **夜间：水彩压暗成夜色（「乡间小路」）** |
+| ![背景选择：今日之诗、三幅水彩、素纸、自己的图片](docs/screenshot-backdrop.jpg) | ![夜间「经验之歌」主题下的「乡间小路」背景](docs/screenshot-backdrop-night.jpg) |
 
 ## 功能
 
@@ -58,6 +60,9 @@
     都可以在那里关掉（关掉后重新安装也不会再加回来）。原文件夹存不进去时（只读之类），转好的开成没保存的标签页。
     Windows 11 上，安装时会问一次管理员权限（UAC）：同意了，「转成 PDF」就在右键菜单第一层；不同意、静默安装或免安装版，它在「显示更多选项」里。
   - 网页版只能转图片（Office、文本、网页的转换要靠本机的 Office 和 WebView2）。
+- **背景**（首页右下角「背景」、⋯ 菜单「换背景…」，或在首页空白处右键）：今日之诗（默认，布莱克原版插图，每天换一幅）；三幅水彩——玫瑰与新月、乡间小路、花边插页
+  （和 Chrome 主题 [chrome-blake-theme](https://github.com/Riyel-Sinix/chrome-blake-theme) 同一套图）；素纸（不放画）；或者自己选一张图片（缩到长边 2560 存在本机）。
+  点一下就换上，记在本机；夜间主题把画压暗成夜色，读文档时淡下去。
 - **桌面集成**：可设为 .pdf 的默认打开方式；程序开着时再从资源管理器打开 PDF，会在同一个窗口里开新标签页；文件可直接拖进窗口。
 
 ## 目录
@@ -74,12 +79,13 @@
 | `src/js/merge.js` / `merge-worker.js` | 合并：列表、页码范围、挑页；后台线程里用 pdf-lib 加书签、旋转 |
 | `src/js/convert.js` / `convert-worker.js` | 转成 PDF：认文件类型、选项对话框、图片解码、把文本 / Markdown / CSV 排成网页；后台线程里用 pdf-lib 把图片拼成 PDF、修正打印出来的书签标题 |
 | `src/js/home.js` | 首页、最近打开、今日之诗 |
+| `src/js/backdrop.js` | 背景：今日之诗、水彩画、素纸、自己的图片（存进 IndexedDB）和选择框 |
 | `src/js/vines.js` | 页边藤蔓和 Clawd |
 | `src/js/platform.js` | 桌面版 / 网页版的差别（读写文件、对话框、窗口按钮） |
 | `src/vendor/` | pdf.js 6.4.299、pdf-lib 1.17.1、marked 18.1.2（`npm run vendor` 从 node_modules 拷过来） |
-| `src/assets/` | 字体子集、纸纹、45 幅原版插图、图标 |
+| `src/assets/` | 字体子集、纸纹、45 幅原版插图、背景水彩（`backdrops/`，`t/` 是选择框里的小图）、图标 |
 | `src-tauri/` | 桌面外壳（Rust）：文件读写、系统对话框、单实例、文件关联；`src/convert.rs` 是转换里靠本机的部分（Office 转换、隐藏窗口打印成 PDF、WIC 解码图片），`src/office.ps1` 是驱动 Office / WPS / LibreOffice 的 PowerShell 脚本；`src/shell_menu.rs` 是资源管理器右键菜单（旧式的写当前用户的注册表；Windows 11 第一层的登记、去掉包），`windows/hooks.nsh` 让安装包装好时加上、卸载时删掉；`shell-menu/` 是 Windows 11 右键菜单第一层的组件（IExplorerCommand 的 DLL、稀疏包清单，包的身份在 `package/identity.json`） |
-| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs` / `shell-menu-smoke.mjs`（桌面版冒烟测试）、`build-shell-menu.mjs`（编译 Windows 11 右键组件、打包成 .msix）/ `shell-menu-e2e.mjs`（它的端到端测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
+| `tools/` | `vendor.mjs`、`fonts.py`（字体子集）、`serve.mjs`（预览服务器）、`preview-helpers.js`（预览里测编辑的小工具）、`icon/`（图标源文件）、`make-backdrops.py`（背景水彩）、`make-test-pdfs.py` / `make-named-dests.py` / `make-showcase-pdf.py`（测试和截图用的 PDF）、`make-convert-tests.py`（转换用的各种测试文件）、`desktop-smoke.mjs` / `convert-smoke.mjs` / `shell-menu-smoke.mjs`（桌面版冒烟测试）、`build-shell-menu.mjs`（编译 Windows 11 右键组件、打包成 .msix）/ `shell-menu-e2e.mjs`（它的端到端测试）、`screenshots.mjs`（README 截图）、`third-party.mjs`（Rust 依赖的许可证清单）、`l10n/`（pdf.js 编辑器的中文界面文字，MPL 2.0） |
 | `docs/` | README 里的截图 |
 
 ## 构建
@@ -99,10 +105,11 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
 安装包看到登记的版本不同才会重新登记（再问一次管理员）；程序和 DLL 更新不用改它。
 
 - 只想在浏览器里看界面：`node tools/serve.mjs`，然后打开 http://127.0.0.1:8780/ （`/__test/` 下是 `.cache/test` 里的测试 PDF，用 `python -P tools/make-test-pdfs.py` 生成）。
+- 背景水彩：`python -P tools/make-backdrops.py [chrome-blake-theme 的 source 文件夹]`，从 Chrome 主题的原图裁掉白边、缩到长边 2560，再做选择框里的小图，输出到 `src/assets/backdrops/`。
 - 字体：霞鹜文楷取 GB2312 全部汉字 + 界面用到的字，`python -P tools/fonts.py`（源字体放 `.cache/fonts/`）；子集化后的字体内部改名为 Songs Han / Songs Fell（两套字体都有 OFL 保留字体名）。文件名里的生僻字会退回系统楷体。
 - 图标：手工上色风格的首字母「P」，字形取自界面字体 IM FELL English。`python -P tools/icon/make-icon.py` 生成 `tools/icon/p-blake.svg`（完整版）和 `p-blake-small.svg`（16–32 像素用的简化版），
   用无头 Edge 渲染，再 `npx tauri icon` 出全套；`icon.ico` 里 16–32 像素放简化版（细藤蔓缩小了会糊），界面左上角的 `src/assets/icon-*.png` 也一起生成。
-- 自动化测试：设环境变量 `PDFVIEWER_TEST_OFFSCREEN=1`，窗口会开在屏幕外、不抢焦点。`node tools/desktop-smoke.mjs` 跑一遍桌面版（打开、合并、编辑、存盘、整理页面、签名、粘贴、关窗确认），截图在 `.cache/shots/`。
+- 自动化测试：设环境变量 `PDFVIEWER_TEST_OFFSCREEN=1`，窗口会开在屏幕外、不抢焦点。`node tools/desktop-smoke.mjs` 跑一遍桌面版（打开、合并、编辑、存盘、整理页面、签名、粘贴、关窗确认、背景），截图在 `.cache/shots/`。
 - 转换测试：`python -P tools/make-convert-tests.py` 在 `.cache/test/convert/` 生成各种格式的测试文件（要 Pillow、python-docx、openpyxl；PPT 用本机的 PowerPoint 生成，没装就跳过），
   再 `node tools/convert-smoke.mjs`（拖放转换、合成一份、拖进合并页、存盘、隐藏窗口有没有关掉）。本机没装 Office / WPS / LibreOffice 时 Office 那几项跳过。
 - 右键菜单测试：`node tools/shell-menu-smoke.mjs`（安装程序用的注册 / 删除、像多选那样同时启动好几个 `--convert`、同名不覆盖、存不进去时的退路、⋯ 菜单的开关）。
@@ -120,4 +127,4 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
 ## 许可
 
 本项目的代码以 [MIT 许可证](LICENSE) 发布。pdf.js、pdf-lib、marked、两套字体、Rust 依赖等第三方组件沿用各自的许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；
-《天真与经验之歌》的插图和诗是公有领域。
+《天真与经验之歌》的插图和诗是公有领域；背景水彩画（`src/assets/backdrops/`）由本项目作者提供，和 Chrome 主题 chrome-blake-theme 是同一套图。
