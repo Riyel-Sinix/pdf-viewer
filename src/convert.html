@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>转成 PDF · PDF 查看器</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+<!-- 资源管理器右键「转成 PDF」的小窗口：只显示进度和结果，转好的存在源文件旁边，不开主窗口（convert-app.js） -->
+<script src="js/boot.js"></script>
+<link rel="preload" href="assets/fonts/wk-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/convert-app.js"></script>
+</head>
+<body class="cvwin">
+<svg class="defs" aria-hidden="true"><filter id="wob" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".014" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+<div class="cvw">
+  <header class="cvw-h" data-tauri-drag-region>
+    <span class="sw"></span>
+    <div class="hd" data-tauri-drag-region>
+      <div class="k" data-tauri-drag-region>Of Changing Forms</div>
+      <h3 id="cvwTitle" data-tauri-drag-region>正在转成 PDF</h3>
+    </div>
+    <button class="x" id="cvwClose" title="关闭" data-ic="close" data-sz="16"></button>
+  </header>
+  <div class="cvw-b" id="cvwBody"><div class="prog ind"><i></i></div><div class="st">正在准备…</div></div>
+  <div class="cvw-f" id="cvwFoot"></div>
+</div>
+<!-- convert.js 用到的对话框、提示（ui.js 要找这两个） -->
+<dialog id="dlg"></dialog>
+<div class="toasts" id="toasts"></div>
+</body>
+</html>

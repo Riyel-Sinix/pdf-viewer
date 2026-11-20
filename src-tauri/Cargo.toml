@@ -1,6 +1,6 @@
 [package]
 name = "pdf-viewer"
-version = "1.4.0"
+version = "1.4.1"
 description = "布莱克《天真与经验之歌》插画风格的 PDF 查看器"
 edition = "2021"
 
@@ -30,6 +30,7 @@ windows = { version = "0.62", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_Security",
+    "Win32_Security_Cryptography",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",

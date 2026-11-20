@@ -352,52 +352,7 @@ async function prepareForMerge(entries) {
   });
 }
 
-/* ---------- 资源管理器右键「转成 PDF」：转好直接存到源文件旁边，再打开 ----------
- * 多选时资源管理器每个文件启动一次程序，单实例把它们陆续转过来：攒一会儿（最后一个到了 400 毫秒后）一起转，进度在同一个对话框里。
- * 同名的 PDF 已经有了就存成「名字 (1).pdf」，不覆盖；源文件夹存不进去（只读之类）就照常开成没保存的标签页 */
-const directQueue = [];
-let directTimer = 0, directBusy = false;
-function queueDirect(entries) {
-  directQueue.push(...entries);
-  clearTimeout(directTimer);
-  directTimer = setTimeout(runDirect, 400);
-}
-async function runDirect() {
-  if (directBusy || converting) { directTimer = setTimeout(runDirect, 500); return; }     // 上一批、或者界面里的转换还没完：等一会儿
-  const batch = directQueue.splice(0);
-  if (!batch.length) return;
-  directBusy = true;
-  try {
-    const res = await runConvert(batch, { ask: false, combine: false });
-    const saved = [];
-    for (const r of res?.results || []) {
-      try { saved.push(await saveBeside(r)); } catch (e) {
-        console.warn(e);
-        toast(`「${r.name}」没能存到源文件旁边（${e?.message || e}），先开着，记得另存`, { kind: 'err', ms: 9000 });
-        openEntry(Object.assign(platform.entryFromBytes(r.name, r.bytes), { converted: { dir: r.dir, sources: r.sources } }), !saved.length);
-      }
-    }
-    if (saved.length) {
-      openEntries(saved.map(p => platform.entryFromPath(p)));
-      toast(saved.length === 1 ? `转好了，存在源文件旁边：${platform.basename(saved[0])}` : `转好了 ${saved.length} 份 PDF，都存在源文件旁边`, {
-        kind: 'ok', ms: 8000, actions: [{ label: '在文件夹中显示', fn: () => platform.revealInFolder(saved[0]) }],
-      });
-    }
-  } finally {
-    directBusy = false;
-    if (directQueue.length) { clearTimeout(directTimer); directTimer = setTimeout(runDirect, 0); }
-  }
-}
-// 存到源文件旁边，不覆盖已有的文件：报告.pdf、报告 (1).pdf、报告 (2).pdf……
-async function saveBeside(r) {
-  if (!r.dir) throw new Error('不知道源文件在哪个文件夹');
-  const base = r.name.replace(/\.pdf$/i, ''), sep = /[\\/]$/.test(r.dir) ? '' : '\\';
-  for (let i = 0; i < 1000; i++) {
-    const path = `${r.dir}${sep}${i ? `${base} (${i})` : base}.pdf`;
-    if (!(await platform.pathsExist([path], { any: true }))[0]) { await platform.writeFile(path, r.bytes); return path; }
-  }
-  throw new Error('同名的文件太多了');
-}
+/* ---------- 资源管理器右键「转成 PDF」：由单独的小窗口转（convert.html / convert-app.js），存到源文件旁边，不开主窗口 ---------- */
 // 右键菜单里的「转成 PDF」：⋯ 菜单里开关（安装版装好时就加上了；免安装版在这里加）
 let shellMenuState = null;
 async function toggleShellMenu() {
@@ -953,12 +908,11 @@ function copyText(text) {
 }
 
 /* ---------- 启动 ---------- */
-// 程序外面交过来的文件（启动参数、开着时再打开的、右键「转成 PDF」的）：要打开的直接开，要转的转好存到源文件旁边
+// 程序外面交过来的要打开的文件（启动参数、开着时再打开的、「转成 PDF」小窗口里点了「打开」的）
 async function takePending() {
   try {
-    const { open, convert } = await platform.takePendingFiles();
+    const { open } = await platform.takePendingFiles();
     if (open.length) openEntries(open);
-    if (convert.length) queueDirect(convert);
   } catch (e) { console.warn(e); }
 }
 (async function init() {

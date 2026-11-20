@@ -88,12 +88,14 @@ export function revealInFolder(path) { if (isDesktop && path) invoke('reveal_in_
 export async function pathsExist(paths, { any = false } = {}) { return isDesktop && paths.length ? invoke('paths_exist', { paths, any }) : paths.map(() => true); }
 // 程序外面交过来的文件：启动参数里的，和开着时再从资源管理器打开 / 右键「转成 PDF」的（单实例插件转过来）。
 // 都先存在 Rust 那边，来一批发一次 files-pending 通知页面来取（页面还没载完时发的通知会丢，文件不会）。
-// open：要打开的；convert：右键菜单「转成 PDF」，转好存到源文件旁边
+// open：要打开的（主窗口来取）；convert：右键菜单「转成 PDF」，转好存到源文件旁边（「转成 PDF」小窗口来取）
 export async function takePendingFiles() {
   if (!isDesktop) return { open: [], convert: [] };
   const p = await invoke('take_pending_files');
   return { open: p.open.map(entryFromPath), convert: p.convert.map(entryFromPath) };
 }
+// 在主窗口里打开（主窗口没开着就开一个）
+export async function openInMain(paths) { if (isDesktop && paths.length) await invoke('open_in_main', { paths }); }
 // 先订上通知再取第一批：中间转过来的不会漏
 export async function onFilesPending(cb) { if (isDesktop) await T.event.listen('files-pending', () => cb()); }
 
@@ -130,6 +132,7 @@ export const win = {
   setTitle(t) { document.title = t; W?.setTitle(t).catch(() => {}); },
   startResize(dir) { W?.startResizeDragging(dir).catch(() => {}); },
   async showIfHidden() { if (W && !(await W.isVisible())) await W.show(); },
+  focus() { W?.setFocus().catch(() => {}); },
   // 关窗前：有没保存的修改就先问（confirm 返回 true 才关）。桌面版拦系统的关闭请求；网页版只能用浏览器自带的 beforeunload 提示
   onCloseRequested({ hasUnsaved, confirm }) {
     if (W) {

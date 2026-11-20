@@ -19,8 +19,9 @@ use windows::Win32::UI::Shell::{IEnumExplorerCommand, IExplorerCommand, IExplore
 
 include!("../../src/shell_exts.rs");
 
-/// 这个命令的 COM 类（和 package/AppxManifest.xml 里的一致）
-pub const CLSID_CONVERT: GUID = GUID::from_u128(0xd8c38e96_983e_449d_8781_ca21213f766a);
+/// 这个命令的 COM 类（和 package/identity.json 里的一致）。1.4.1 起包签了名，换了新的；
+/// 1.3.1–1.4.0 没签名的包用的 D8C38E96-…（Windows 不让它启动）不再认，免得那个包万一能用时菜单里出现两个
+pub const CLSID_CONVERT: GUID = GUID::from_u128(0x504ce3f6_535d_4d75_9938_1812e827bd6f);
 /// 端到端测试的包（tools/shell-menu-e2e.mjs）登记的是这个：和正式的分开，测试登记、去掉登记碰不到用户装好的菜单。
 /// 两个都要和 package/identity.json 一致（打包脚本会查）
 pub const CLSID_CONVERT_TEST: GUID = GUID::from_u128(0xb05b0d91_d689_4a62_b369_31ffe4907d93);

@@ -11,7 +11,8 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 /// 等页面来取的文件：启动参数里带的，和程序开着时从别的进程转过来的（单实例）。
-/// open：要打开的（资源管理器「打开方式」、拖到程序图标上）；convert：右键菜单「转成 PDF」点的，转好直接存到源文件旁边。
+/// open：要打开的（资源管理器「打开方式」、拖到程序图标上），主窗口来取；
+/// convert：右键菜单「转成 PDF」点的，「转成 PDF」小窗口（convert.html）来取，转好直接存到源文件旁边，不开主窗口。
 /// 先放在这里、再通知页面来取：多选时资源管理器几乎同时启动好几个进程，转过来的时候页面可能还没载完，直接发事件会丢
 #[derive(Default, serde::Serialize)]
 struct Pending {
@@ -84,9 +85,93 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 
+/// 主窗口取要打开的，「转成 PDF」小窗口取要转的
 #[tauri::command]
-fn take_pending_files(state: State<'_, PendingFiles>) -> Pending {
-    std::mem::take(&mut *state.0.lock().unwrap())
+fn take_pending_files(window: WebviewWindow, state: State<'_, PendingFiles>) -> Pending {
+    let mut q = state.0.lock().unwrap();
+    if window.label() == CONVERT {
+        Pending { open: Vec::new(), convert: std::mem::take(&mut q.convert) }
+    } else {
+        Pending { open: std::mem::take(&mut q.open), convert: Vec::new() }
+    }
+}
+
+/// 「转成 PDF」小窗口里点「打开」：在主窗口里打开转好的 PDF（主窗口没开着就开一个）
+#[tauri::command]
+async fn open_in_main(app: AppHandle, state: State<'_, PendingFiles>, paths: Vec<String>) -> Result<(), String> {
+    state.0.lock().unwrap().open.extend(paths);
+    show_window(&app, MAIN, true).map_err(|e| e.to_string())
+}
+
+const MAIN: &str = "main";
+const CONVERT: &str = "convert";
+
+/// 自动化测试（PDFVIEWER_TEST_OFFSCREEN）时窗口放在屏幕外、永远不激活（不抢用户正在用的窗口的焦点）
+fn offscreen() -> bool {
+    std::env::var_os("PDFVIEWER_TEST_OFFSCREEN").is_some()
+}
+
+/// 建主窗口（main，index.html）或者「转成 PDF」小窗口（convert，convert.html）。先隐藏着建，页面画好后自己显示
+fn build_window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
+    let main = label == MAIN;
+    let mut b = WebviewWindowBuilder::new(app, label, WebviewUrl::App(if main { "index.html" } else { "convert.html" }.into()))
+        .decorations(false)
+        .shadow(true)
+        .visible(false)
+        // 只许停留在应用自己的页面里；PDF 里的外部链接由前端交给系统浏览器
+        .on_navigation(|url| matches!(url.scheme(), "tauri" | "asset") || url.host_str() == Some("tauri.localhost"));
+    b = if main {
+        b.title("PDF 查看器").inner_size(1280.0, 860.0).min_inner_size(760.0, 520.0)
+    } else {
+        // 只是个进度窗口：小、不能改大小，在任务栏里能看到
+        b.title("转成 PDF · PDF 查看器").inner_size(460.0, 260.0).resizable(false).maximizable(false)
+    };
+    let test_data = test_data_dir();
+    b = match &test_data {
+        Some(data) => b.focused(false).focusable(false).data_directory(data.clone()),
+        None => b.center(),
+    };
+    let win = b.build()?;
+    if test_data.is_some() {
+        // 注意：建窗时给的位置如果不在任何显示器上，tao 会悄悄改用系统默认位置（屏幕左上角），
+        // 所以先隐藏着建好，再挪到屏幕外，最后不激活地显示
+        win.set_position(tauri::PhysicalPosition::new(-7000, if main { 40 } else { 960 }))?;
+        win.show()?;
+    }
+    // 页面画好后会自己显示窗口；万一没有，2.5 秒后兜底
+    let w = win.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        if !w.is_visible().unwrap_or(true) {
+            let _ = w.show();
+        }
+    });
+    Ok(win)
+}
+
+/// 已经建了（或者正在建）的窗口。WebView2 是异步建的：刚 build 完、还没建好的时候 get_webview_window 找不到它，
+/// 这时候（多选右键时别的进程转过来）再建一个同名的，会把原来那个从 Tauri 的窗口表里挤掉，它的 invoke 全部失败。窗口关掉（Destroyed）时去掉
+#[derive(Default)]
+struct Opened(Mutex<std::collections::HashSet<String>>);
+
+/// 窗口开着就提到前面并通知它来取文件，没开着就建一个（新页面载好后自己来取），正在建就什么都不用做。focus：要不要提到前面（测试时不要）
+fn show_window(app: &AppHandle, label: &str, focus: bool) -> tauri::Result<()> {
+    if let Some(w) = app.get_webview_window(label) {
+        if focus && !offscreen() {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        let _ = w.emit("files-pending", ());
+        return Ok(());
+    }
+    let opened = app.state::<Opened>();
+    if !opened.0.lock().unwrap().insert(label.to_string()) {
+        return Ok(());
+    }
+    build_window(app, label).map(drop).inspect_err(|_| {
+        opened.0.lock().unwrap().remove(label);
+    })
 }
 
 #[tauri::command]
@@ -228,49 +313,62 @@ pub fn run() {
     let installer = args.iter().find_map(|a| match a.as_str() {
         "--register-shell-menu" => Some(shell_menu::from_installer(true)),
         "--unregister-shell-menu" => Some(shell_menu::from_installer(false)),
-        // Windows 11 第一层菜单的包：要不要登记、（以管理员身份）登记、卸载前去掉，见 shell_menu.rs 和 windows/hooks.nsh
-        "--shell-package-needed" => Some(shell_menu::package_needed()),
+        // Windows 11 第一层菜单：证书和没签名的旧包（要管理员的那几步）、按用户登记、卸载前去掉，见 shell_menu.rs 和 windows/hooks.nsh
+        "--shell-setup-needs-admin" => Some(shell_menu::setup_needs_admin()),
+        "--shell-setup-admin" => Some(shell_menu::setup_admin()),
         "--add-shell-package" => Some(shell_menu::add_package()),
         "--remove-shell-package" => Some(shell_menu::remove_package()),
+        "--shell-cleanup-needs-admin" => Some(shell_menu::cleanup_needs_admin()),
+        "--shell-cleanup-admin" => Some(shell_menu::cleanup_admin()),
         _ => None,
     });
     if let Some(code) = installer {
         std::process::exit(code);
     }
     let initial = launch_files(args, None);
+    // 只是右键「转成 PDF」的话只开转换的小窗口，不开主窗口；要打开文件（或者什么都没带）才开主窗口
+    let start_convert = !initial.convert.is_empty();
+    let start_main = !initial.open.is_empty() || !start_convert;
     let mut context = tauri::generate_context!();
     // 自动化测试换个 identifier：单实例按它认程序，不换的话用户正开着 PDF 查看器时，测试的启动参数会转进用户的窗口里
     if test_data_dir().is_some() {
         context.config_mut().identifier.push_str(".test");
     }
     tauri::Builder::default()
-        // 已经开着时再打开 PDF、或者右键「转成 PDF」：交给正在运行的窗口
+        // 已经开着时再打开 PDF、或者右键「转成 PDF」：交给正在运行的程序。
+        // 要转的交给「转成 PDF」小窗口（没开着就开一个，不动主窗口）；要打开的、或者什么都没带（又点了一次程序图标）交给主窗口
         .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let got = launch_files(argv, Some(Path::new(&cwd)));
-            let any = !(got.open.is_empty() && got.convert.is_empty());
-            if any {
+            let (convert, open) = (!got.convert.is_empty(), !got.open.is_empty() || got.convert.is_empty());
+            {
                 let state = app.state::<PendingFiles>();
                 let mut q = state.0.lock().unwrap();
                 q.open.extend(got.open);
                 q.convert.extend(got.convert);
             }
-            if let Some(w) = app.get_webview_window("main") {
-                // 平时要把窗口提到前面；自动化测试时不要抢用户正在用的窗口的焦点
-                if std::env::var_os("PDFVIEWER_TEST_OFFSCREEN").is_none() {
-                    let _ = w.unminimize();
-                    let _ = w.show();
-                    let _ = w.set_focus();
+            // 建窗口要等事件循环处理，这个回调就在事件循环里跑：放到别的线程，不然会卡死
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if convert {
+                    let _ = show_window(&app, CONVERT, true);
                 }
-                if any {
-                    let _ = w.emit("files-pending", ());
+                if open {
+                    let _ = show_window(&app, MAIN, true);
                 }
-            }
+            });
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(PendingFiles(Mutex::new(initial)))
+        .manage(Opened::default())
+        .on_window_event(|w, e| {
+            if let tauri::WindowEvent::Destroyed = e {
+                w.state::<Opened>().0.lock().unwrap().remove(w.label());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
+            open_in_main,
             shell_menu_status,
             set_shell_menu,
             read_file,
@@ -284,37 +382,13 @@ pub fn run() {
             convert::print_pdf,
             convert::decode_image
         ])
-        .setup(|app| {
-            // 自动化测试用：窗口放到屏幕外，而且永远不会被激活（不抢用户正在用的窗口的焦点）
-            let test_data = test_data_dir();
-            let offscreen = test_data.is_some();
-            let mut b = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("PDF 查看器")
-                .inner_size(1280.0, 860.0)
-                .min_inner_size(760.0, 520.0)
-                .decorations(false)
-                .shadow(true)
-                .visible(false)
-                // 只许停留在应用自己的页面里；PDF 里的外部链接由前端交给系统浏览器
-                .on_navigation(|url| matches!(url.scheme(), "tauri" | "asset") || url.host_str() == Some("tauri.localhost"));
-            b = match test_data {
-                Some(data) => b.focused(false).focusable(false).data_directory(data),
-                None => b.center(),
-            };
-            let win = b.build()?;
-            if offscreen {
-                // 注意：建窗时给的位置如果不在任何显示器上，tao 会悄悄改用系统默认位置（屏幕左上角），
-                // 所以先隐藏着建好，再挪到屏幕外，最后不激活地显示
-                win.set_position(tauri::PhysicalPosition::new(-7000, 40))?;
-                win.show()?;
+        .setup(move |app| {
+            if start_main {
+                show_window(app.handle(), MAIN, false)?;
             }
-            // 页面画好后会自己显示窗口；万一没有，2.5 秒后兜底
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(2500));
-                if !win.is_visible().unwrap_or(true) {
-                    let _ = win.show();
-                }
-            });
+            if start_convert {
+                show_window(app.handle(), CONVERT, false)?;
+            }
             Ok(())
         })
         .run(context)

@@ -10,8 +10,8 @@ import path from 'node:path';
 const root = path.dirname(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
 export const OUT = path.join(root, 'src-tauri', 'target', 'shell-menu');
 const crate = path.join(root, 'src-tauri', 'shell-menu');
-// 没签名的包：publisher 带微软规定的 OID，安装时要 AllowUnsigned（要管理员，程序的 --add-shell-package 做）。
-// 端到端测试在开发者模式下直接登记清单，那样反而不认这个 OID，所以测试包用普通的 test_publisher
+// 包用自签名证书签名（没签名的包 Windows 不让它启动）：私钥在打包机器「当前用户\个人」证书库里，按 signing_thumbprint 找；
+// 公钥 .cer 和包一起放进安装文件夹，安装时装进本机「受信任的人」。端到端测试在开发者模式下直接登记清单，不用签名
 export const IDENTITY = JSON.parse(fs.readFileSync(path.join(crate, 'package', 'identity.json'), 'utf8'));
 
 // DLL 认的 CLSID 要和 identity.json 一致，不然包登记得上，资源管理器却创建不了命令
@@ -43,6 +43,19 @@ function makeappx() {
   throw new Error('找不到 makeappx.exe：需要装 Windows SDK（Visual Studio 生成工具里的「Windows SDK」）');
 }
 
+function signtool() {
+  return path.join(path.dirname(makeappx()), 'signtool.exe');
+}
+
+// 用打包机器上的签名证书签名（publisher 要和证书的使用者一致，signtool 会查）
+export function signMsix(msix) {
+  try { execFileSync(signtool(), ['sign', '/fd', 'SHA256', '/sha1', IDENTITY.signing_thumbprint, '/s', 'My', msix], { encoding: 'utf8' }); }
+  catch (e) {
+    throw new Error(`签不了名：${String(e.stdout || '').trim()} ${String(e.stderr || '').trim()}\n` +
+      `要在「当前用户\\个人」证书库里有指纹为 ${IDENTITY.signing_thumbprint} 的证书（备份在 %USERPROFILE%\\.pdf-viewer-signing，见那里的 README.txt）`);
+  }
+}
+
 // 打成 .msix。/nv：稀疏包里没有 pdf-viewer.exe（在安装文件夹里），按普通包检查会说「文件不存在」；清单本身的格式由端到端测试登记时检查
 export function packMsix(stage, msix) {
   try { execFileSync(makeappx(), ['pack', '/o', '/nv', '/d', stage, '/p', msix], { encoding: 'utf8' }); }
@@ -55,6 +68,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
   const stage = path.join(OUT, 'package');
   stagePackage(stage);
   const msix = path.join(OUT, 'PDFViewer.ShellMenu.msix');
-  try { packMsix(stage, msix); } catch (e) { console.error(e.message); process.exit(1); }
-  console.log(`右键组件：${path.join(OUT, 'release', 'pdf_viewer_shell.dll')}、${msix}（${IDENTITY.version}）`);
+  try { packMsix(stage, msix); signMsix(msix); } catch (e) { console.error(e.message); process.exit(1); }
+  fs.copyFileSync(path.join(crate, 'package', IDENTITY.certificate), path.join(OUT, IDENTITY.certificate));
+  console.log(`右键组件：${path.join(OUT, 'release', 'pdf_viewer_shell.dll')}、${msix}（${IDENTITY.version}，已签名）、${path.join(OUT, IDENTITY.certificate)}`);
 }

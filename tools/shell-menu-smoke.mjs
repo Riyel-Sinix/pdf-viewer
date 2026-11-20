@@ -3,9 +3,10 @@
 //   python -P tools/make-convert-tests.py      # 先生成测试文件（.cache/test/convert）
 //   node tools/shell-menu-smoke.mjs [exe 路径]
 // 检查：1. 安装程序用的 --register-shell-menu / --unregister-shell-menu：每种文件类型一项「转成 PDF」（文字、图标、多选、命令行），不开窗口
-//       2. 程序没开着时，像资源管理器多选那样同时启动几个 `--convert 文件`：只留一个程序，全都转好存到源文件旁边、开成标签页；
-//          已经有同名 PDF 的存成「名字 (1).pdf」，原来的不动
-//       3. 开着时再右键转：同一个文件再转一次存成「(1)」；源文件夹不让写的，开成没保存的标签页并提示
+//       2. 程序没开着时，像资源管理器多选那样同时启动几个 `--convert 文件`：只留一个程序，只开「转成 PDF」小窗口（不开主窗口），
+//          全都转好存到源文件旁边、不打开；已经有同名 PDF 的存成「名字 (1).pdf」，原来的不动；转好了小窗口自己关掉，程序退出
+//       3. 主窗口开着时再右键转：主窗口不动；同一个文件再转一次存成「(1)」；源文件夹不让写的列在结果里、可以另存为；
+//          点「打开」才在主窗口里开
 //       4. ⋯ 菜单的开关：关掉后留下记号，安装程序再注册时跳过；再打开时去掉记号。右键菜单里的类型都是程序能转的
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -58,8 +59,70 @@ fs.rmSync(testData, { recursive: true, force: true });
 fs.mkdirSync(testData, { recursive: true });
 spawnSync('reg', ['delete', REG_ROOT, '/f'], { stdio: 'ignore' });
 
-let ws, seq = 0;
-const procs = [], pending = new Map(), logs = [];
+let seq = 0;
+const procs = [], logs = [], geo = [], conns = [];
+// 连上一个页面（index.html 是主窗口，convert.html 是「转成 PDF」小窗口）：两个窗口共用一个 WebView2，DevTools 端口相同
+const targets = async () => { try { return (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).filter(t => t.type === 'page' && /tauri\.localhost/.test(t.url)); } catch { return []; } };
+const MAIN_URL = /tauri\.localhost\/(index\.html)?$/, CONVERT_URL = /convert\.html/;
+const hasPage = async re => (await targets()).some(t => re.test(t.url));
+async function attach(re, ms = 40000) {
+  let target = null;
+  for (let t0 = Date.now(); !target && Date.now() - t0 < ms;) { target = (await targets()).find(t => re.test(t.url)); if (!target) await sleep(300); }
+  if (!target) throw new Error(`没等到窗口：${re}`);
+  const ws = new WebSocket(target.webSocketDebuggerUrl), pending = new Map();
+  conns.push(ws);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  const tag = CONVERT_URL.test(target.url) ? 'convert' : 'main';
+  ws.onmessage = ({ data }) => {
+    const m = JSON.parse(data);
+    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+    else if (m.method === 'Runtime.consoleAPICalled') logs.push(`[${m.params.type}] (${tag}) ${m.params.args.map(a => a.value ?? a.description ?? '').join(' ')}`);
+    else if (m.method === 'Runtime.exceptionThrown') logs.push(`[exception] (${tag}) ${m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text}`);
+    else if (m.method === 'Log.entryAdded') logs.push(`[${m.params.entry.level}] (${tag}) ${m.params.entry.text} ${m.params.entry.url || ''}`);
+  };
+  const send = (method, params = {}, ms2 = 30000) => new Promise((r, rej) => {
+    if (ws.readyState !== 1) { rej(new Error(`窗口已经关了：${method}`)); return; }
+    const id = ++seq;
+    const t = setTimeout(() => { pending.delete(id); rej(new Error(`DevTools 调用超时：${method}`)); }, ms2);
+    pending.set(id, m => { clearTimeout(t); r(m); });
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate = async (expr, ms2 = 30000) => {
+    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }, ms2);
+    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text);
+    return r.result?.result?.value;
+  };
+  const offscreenOk = async step => {
+    const g = JSON.parse(await evaluate(`(async () => { const w = __TAURI__.window.getCurrentWindow(); const p = await w.outerPosition(); return JSON.stringify({ x: p.x, y: p.y, max: await w.isMaximized(), full: await w.isFullscreen(), focused: await w.isFocused() }); })()`));
+    geo.push({ step: `${tag}:${step}`, ...g });
+    return g.x < -5000 && !g.max && !g.full;
+  };
+  const shot = async name => {
+    if (!await offscreenOk(name)) throw new Error(`窗口跑到屏幕上了（${name}）`);
+    const r = await send('Page.captureScreenshot', { format: 'png' });
+    if (r.result?.data) fs.writeFileSync(path.join(shots, name), Buffer.from(r.result.data, 'base64'));
+  };
+  await send('Runtime.enable');
+  await send('Log.enable');
+  let placed = false;
+  for (let i = 0; i < 20 && !placed; i++) { try { placed = await offscreenOk('刚启动'); break; } catch { await sleep(150); } }
+  if (!placed) throw new Error(`窗口不在屏幕外（${tag}）`);
+  return { evaluate, shot, closed: () => ws.readyState !== 1, close: () => { try { ws.close(); } catch {} } };
+}
+// 「转成 PDF」小窗口：等转完、显示结果
+const waitResult = async (cv, ms = 150000) => {
+  const t0 = Date.now();
+  let s = null;
+  while (Date.now() - t0 < ms) {
+    s = JSON.parse(await cv.evaluate(`JSON.stringify(window.__cv ? __cv.state() : null)`));
+    if (s && s.view === 'result' && !s.busy && !s.queued) return s;
+    await sleep(300);
+  }
+  return { ...s, timeout: true };
+};
+const waitProcesses = async (n, ms = 12000) => { const t0 = Date.now(); let a; while (Date.now() - t0 < ms) { a = ourProcesses(); if (a === n) return a; await sleep(300); } return a; };
+const waitReady = async (c, flag) => { for (let i = 0; i < 40; i++) { await sleep(250); if (await c.evaluate(`!!window.${flag}`).catch(() => false)) return; } };
+let main = null;
 try {
   // 1. 安装程序用的开关
   const reg1 = runFlag('--register-shell-menu');
@@ -72,99 +135,82 @@ try {
   const unreg1 = runFlag('--unregister-shell-menu');
   check('卸载时删掉', unreg1.status === 0 && verbExts(regText()).length === 0, JSON.stringify(unreg1));
 
-  // 2. 程序没开着：像资源管理器多选那样同时启动 5 个 --convert
+  // 2. 程序没开着：像资源管理器多选那样同时启动 5 个 --convert。只开「转成 PDF」小窗口，不开主窗口；存到源文件旁边，不打开
   const first = ['照片-EXIF方向6.jpg', '透明.png', '说明.md', '报告.docx', '已有.txt'];
   for (const n of first) procs.push(spawn(exe, ['--convert', path.join(W, n)], { env, stdio: 'ignore' }));
-  let target = null;
-  for (let i = 0; i < 80 && !target; i++) {
-    await sleep(500);
-    try { target = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()).find(t => t.type === 'page' && /tauri\.localhost/.test(t.url)); } catch {}
-  }
-  if (!target) throw new Error('DevTools 端口没起来');
-  ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-  ws.onmessage = ({ data }) => {
-    const m = JSON.parse(data);
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-    else if (m.method === 'Runtime.consoleAPICalled') logs.push(`[${m.params.type}] ${m.params.args.map(a => a.value ?? a.description ?? '').join(' ')}`);
-    else if (m.method === 'Runtime.exceptionThrown') logs.push(`[exception] ${m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text}`);
-    else if (m.method === 'Log.entryAdded') logs.push(`[${m.params.entry.level}] ${m.params.entry.text} ${m.params.entry.url || ''}`);
-  };
-  const send = (method, params = {}, ms = 30000) => new Promise((r, rej) => {
-    const id = ++seq;
-    const t = setTimeout(() => { pending.delete(id); rej(new Error(`DevTools 调用超时：${method}`)); }, ms);
-    pending.set(id, m => { clearTimeout(t); r(m); });
-    ws.send(JSON.stringify({ id, method, params }));
-  });
-  const evaluate = async (expr, ms = 30000) => {
-    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }, ms);
-    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text);
-    return r.result?.result?.value;
-  };
-  const geo = [];
-  const offscreenOk = async step => {
-    const g = JSON.parse(await evaluate(`(async () => { const w = __TAURI__.window.getCurrentWindow(); const p = await w.outerPosition(); return JSON.stringify({ x: p.x, y: p.y, max: await w.isMaximized(), full: await w.isFullscreen(), focused: await w.isFocused() }); })()`));
-    geo.push({ step, ...g });
-    return g.x < -5000 && !g.max && !g.full;
-  };
-  const shot = async name => {
-    if (!await offscreenOk(name)) throw new Error(`窗口跑到屏幕上了（${name}）`);
-    const r = await send('Page.captureScreenshot', { format: 'png' });
-    if (r.result?.data) fs.writeFileSync(path.join(shots, name), Buffer.from(r.result.data, 'base64'));
-  };
-  await send('Runtime.enable');
-  await send('Log.enable');
-  let placed = false;
-  for (let i = 0; i < 20 && !placed; i++) { try { placed = await offscreenOk('刚启动'); break; } catch { await sleep(150); } }
-  if (!placed) throw new Error('窗口不在屏幕外');
-  for (let i = 0; i < 40; i++) { await sleep(250); if (await evaluate('!!window.__pv').catch(() => false)) break; }
-  await evaluate(`window.__sm = {
-    toasts: () => [...document.querySelectorAll('.toast .tx')].map(x => x.textContent),
-    tabs: () => __pv.state.tabs.map(t => ({ name: t.name, path: t.path, loading: t.loading, dirty: __pv.isDirty(t), pages: t.numPages, converted: t.converted })),
-  }, true`);
-  // 等：要么 n 个标签页都载好，要么出现「没找到能打开它的软件」之类的出错提示（这时少一个）
-  const waitTabs = async (n, ms = 150000) => {
-    const t0 = Date.now();
-    let s;
-    while (Date.now() - t0 < ms) {
-      s = JSON.parse(await evaluate(`JSON.stringify({ tabs: __sm.tabs(), toasts: __sm.toasts(), busy: !!document.querySelector('#dlg[open]') })`));
-      const errs = s.toasts.filter(t => /没转成|没能存到/.test(t)).length;
-      if (!s.busy && s.tabs.length + errs >= n && s.tabs.every(t => !t.loading)) return s;
-      await sleep(400);
-    }
-    return { ...s, timeout: true };
-  };
-  const cold = await waitTabs(first.length);
-  const noOffice = cold.toasts.some(t => /报告\.docx.*没找到能打开它的软件/.test(t));
+  const cv1 = await attach(CONVERT_URL);
+  await waitReady(cv1, '__cv');
+  const cold = await waitResult(cv1);
+  const noOffice = !!cold.failed?.some(f => /报告\.docx/.test(f.name) && /没找到能打开它的软件/.test(f.error));
   const want = ['照片-EXIF方向6.pdf', '透明.pdf', '说明.pdf', ...(noOffice ? [] : ['报告.pdf']), '已有 (1).pdf'];
   await sleep(1500);                                      // 等另外几个进程都退出
-  const alive = ourProcesses();
+  const alive = ourProcesses(), mainOpened = await hasPage(MAIN_URL);
   const outs = want.filter(n => fs.existsSync(path.join(W, n)));
-  const tabNames = cold.tabs.map(t => t.name).sort();
-  check('程序没开着时多选右键「转成 PDF」：只留一个程序，全都存到源文件旁边并打开', alive === 1 && outs.length === want.length && want.every(n => fs.readFileSync(path.join(W, n)).subarray(0, 5).toString() === '%PDF-')
-    && tabNames.join('|') === [...want].sort().join('|') && cold.tabs.every(t => t.path?.startsWith(W) && !t.dirty && t.pages >= 1) && cold.toasts.some(t => /转好了/.test(t)),
-  JSON.stringify({ alive, outs, cold: { ...cold, tabs: cold.tabs.map(t => [t.name, t.dirty, t.pages]) }, noOffice }));
+  const title1 = await cv1.evaluate(`document.querySelector('#cvwTitle').textContent`);
+  check('程序没开着时多选右键「转成 PDF」：只留一个程序，只开转换的小窗口（没开主窗口），全都存到源文件旁边',
+    alive === 1 && !mainOpened && outs.length === want.length && want.every(n => fs.readFileSync(path.join(W, n)).subarray(0, 5).toString() === '%PDF-')
+    && cold.total === first.length && [...cold.saved].sort().join('|') === want.map(n => path.join(W, n)).sort().join('|') && !cold.unsaved.length
+    && (noOffice ? cold.failed.length === 1 : !cold.failed.length && title1 === '转好了'),
+  JSON.stringify({ alive, mainOpened, outs, cold, title1, noOffice }));
   check('已经有同名 PDF：存成「已有 (1).pdf」，原来的不动', fs.existsSync(path.join(W, '已有 (1).pdf')) && sha(path.join(W, '已有.pdf')) === keep);
   if (noOffice) check('Word 文档（右键转）', null, '本机没装 Office、WPS 或 LibreOffice');
-  await shot('shell-1-cold.png');
+  await cv1.shot('shell-1-cold.png');
+  if (noOffice) await cv1.evaluate(`document.querySelector('#cvwClose').click()`).catch(() => {});   // 有没转成的不会自己关
+  const left1 = await waitProcesses(0);
+  check(noOffice ? '点关闭：小窗口关掉，程序退出（没开过主窗口）' : '全都转好了：小窗口几秒后自己关掉，程序退出（没开过主窗口）', left1 === 0, JSON.stringify({ left1 }));
+  cv1.close();
 
-  // 3. 开着时再右键：同一个文件再转一次；源文件夹不让写的
+  // 3. 主窗口开着时再右键：主窗口不动（不加标签页）；同一个文件再转一次存成「(1)」；源文件夹不让写的可以另存为；点「打开」才在主窗口里开
+  procs.push(spawn(exe, [], { env, stdio: 'ignore' }));
+  main = await attach(MAIN_URL);
+  await waitReady(main, '__pv');
+  await main.evaluate(`window.__sm = {
+    toasts: () => [...document.querySelectorAll('.toast .tx')].map(x => x.textContent),
+    tabs: () => __pv.state.tabs.map(t => ({ name: t.name, path: t.path, loading: t.loading, dirty: __pv.isDirty(t), pages: t.numPages })),
+  }, true`);
   execFileSync('icacls', [LOCKED, '/deny', `${ME}:(WD)`], { stdio: 'ignore' });
-  const before = cold.tabs.length;
   for (const f of [path.join(W, '照片-EXIF方向6.jpg'), path.join(LOCKED, '锁住.txt')]) procs.push(spawn(exe, ['--convert', f], { env, stdio: 'ignore' }));
-  const warm = await waitTabs(before + 2, 60000);
+  const cv2 = await attach(CONVERT_URL);
+  await waitReady(cv2, '__cv');
+  const warm = await waitResult(cv2, 60000);
   unlock();
-  const added = warm.tabs.slice(before);
-  const again = added.find(t => t.name === '照片-EXIF方向6 (1).pdf'), locked = added.find(t => t.name === '锁住.pdf');
-  check('开着时再右键转同一个文件：存成「(1)」', !!again && again.path === path.join(W, '照片-EXIF方向6 (1).pdf') && !again.dirty && fs.existsSync(again.path), JSON.stringify(added));
-  check('源文件夹不让写：开成没保存的标签页并提示', !!locked && locked.dirty && !locked.path && locked.converted?.dir === LOCKED && warm.toasts.some(t => /锁住\.pdf.*没能存到源文件旁边/.test(t))
-    && fs.readdirSync(LOCKED).join('|') === '锁住.txt', JSON.stringify({ locked, toasts: warm.toasts, files: fs.readdirSync(LOCKED) }));
-  check('转完只剩一个程序', ourProcesses() === 1);
-  await shot('shell-2-warm.png');
+  await sleep(1500);
+  const tabs0 = JSON.parse(await main.evaluate('JSON.stringify(__sm.tabs())'));
+  const again = path.join(W, '照片-EXIF方向6 (1).pdf');
+  check('主窗口开着时再右键转：主窗口不加标签页，同一个文件再转存成「(1)」', tabs0.length === 0 && warm.saved?.length === 1 && warm.saved[0] === again && fs.existsSync(again) && ourProcesses() === 1,
+    JSON.stringify({ tabs0, warm }));
+  const locked = warm.unsaved?.find(u => u.name === '锁住.pdf');
+  await sleep(6500);
+  const stillOpen = !cv2.closed() && await hasPage(CONVERT_URL);
+  check('源文件夹不让写：结果里列出来、能另存为，小窗口不自己关', !!locked && locked.dir === LOCKED && fs.readdirSync(LOCKED).join('|') === '锁住.txt' && stillOpen
+    && await cv2.evaluate(`!!document.querySelector('[data-act=saveas]')`), JSON.stringify({ locked, stillOpen, files: fs.readdirSync(LOCKED) }));
+  await cv2.shot('shell-2-warm.png');
+  const saveTo = path.join(W, '另存的锁住.pdf');
+  const sa = JSON.parse(await cv2.evaluate(`(async () => {
+    let asked = null;
+    window.__pvTest = { askSavePath: (name, dir) => { asked = { name, dir }; return ${JSON.stringify(saveTo)}; } };
+    document.querySelector('[data-act=saveas]').click();
+    for (let i = 0; i < 40 && __cv.state().unsaved.length; i++) await new Promise(r => setTimeout(r, 150));
+    return JSON.stringify({ asked, state: __cv.state() });
+  })()`));
+  check('另存为：问的是原来的名字和文件夹，存好后算进转好的', sa.asked?.name === '锁住.pdf' && sa.asked?.dir === LOCKED && !sa.state.unsaved.length && sa.state.saved.includes(saveTo)
+    && fs.existsSync(saveTo) && fs.readFileSync(saveTo).subarray(0, 5).toString() === '%PDF-', JSON.stringify(sa));
+  await cv2.evaluate(`document.querySelector('[data-act=open]').click(), true`).catch(() => {});
+  let tabs1 = [];
+  for (let i = 0; i < 60; i++) {
+    await sleep(300);
+    tabs1 = JSON.parse(await main.evaluate('JSON.stringify(__sm.tabs())'));
+    if (tabs1.length >= 2 && tabs1.every(t => !t.loading)) break;
+  }
+  await sleep(800);
+  const convertLeft = await hasPage(CONVERT_URL);
+  check('点「打开」：在主窗口里开转好的 PDF，小窗口关掉，程序还在', tabs1.map(t => t.path).sort().join('|') === [again, saveTo].sort().join('|') && tabs1.every(t => !t.dirty && t.pages >= 1)
+    && !convertLeft && ourProcesses() === 1, JSON.stringify({ tabs1, convertLeft }));
+  cv2.close();
 
   // 4. ⋯ 菜单的开关（点真正的菜单项），关掉后安装程序不再加回来
   const menuItem = `[...document.querySelectorAll('.menu .mi')].find(b => /右键菜单里的「转成 PDF」/.test(b.textContent))`;
-  const toggle = async () => JSON.parse(await evaluate(`(async () => {
+  const toggle = async () => JSON.parse(await main.evaluate(`(async () => {
     document.querySelector('#tbMore').click();
     await new Promise(r => setTimeout(r, 300));
     const b = ${menuItem}, was = b?.classList.contains('on');
@@ -177,7 +223,7 @@ try {
   const marker = path.join(testData, 'shell-menu-off');
   const on1 = await toggle();
   const reg2 = verbExts(regText());
-  const convertible = JSON.parse(await evaluate(`(async () => { const cv = await import('./js/convert.js'); const s = await __TAURI__.core.invoke('shell_menu_status'); return JSON.stringify(s.exts.filter(e => !cv.canConvert('x.' + e))); })()`));
+  const convertible = JSON.parse(await main.evaluate(`(async () => { const cv = await import('./js/convert.js'); const s = await __TAURI__.core.invoke('shell_menu_status'); return JSON.stringify(s.exts.filter(e => !cv.canConvert('x.' + e))); })()`));
   check('⋯ 菜单里打开：注册上，指向这个程序，类型都是能转的', on1.found && on1.was === false && on1.status.installed && on1.status.current && reg2.length === on1.status.exts.length && convertible.length === 0
     && on1.toasts.some(t => /加好了/.test(t)), JSON.stringify({ ...on1, reg: reg2.length, convertible }));
   const off1 = await toggle();
@@ -196,7 +242,7 @@ try {
 } catch (e) {
   check('右键菜单测试本身', false, e.message);
 } finally {
-  try { ws?.close(); } catch {}
+  for (const c of conns) { try { c.close(); } catch {} }
   for (const p of procs) { try { execFileSync('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore' }); } catch {} }
   unlock();
   spawnSync('reg', ['delete', REG_ROOT, '/f'], { stdio: 'ignore' });

@@ -55,10 +55,12 @@
   - 文本、Markdown、CSV / TSV、网页（桌面版，.html、.mht 网页存档）：排好版后在看不见的窗口里打印成 PDF。A4，页脚有页码；Markdown 和网页的标题变成书签；
     文本自动认 UTF-8 / GBK；代码用等宽字体，长行自动换行；CSV 的表头每页都有，列多时自动横排。网页打印时不运行里面的脚本、也不会跳到别的网址。
   - 几个文件一起转：可以合成一份（按文件名排序；混着放时每个文件一个书签，原来的书签收在它下面），也可以每个文件一份。拖进合并页的图片、文档会先转成 PDF 再加入。
-  - **右键菜单**（桌面版）：在资源管理器里右键图片、Office 文档、Markdown、CSV、网页或 .txt，点「转成 PDF」，转好直接存在原文件旁边（同名的 PDF 已经有了就存成「名字 (1).pdf」，不覆盖），
-    再在程序里打开；可以多选（一次最多 100 个），程序没开着也行。安装版装好就有，免安装版在 ⋯ 菜单里打开「资源管理器右键菜单里的「转成 PDF」」；
+  - **右键菜单**（桌面版）：在资源管理器里右键图片、Office 文档、Markdown、CSV、网页或 .txt，点「转成 PDF」，只弹出一个小进度窗口（不开主界面），转好直接存在原文件旁边（同名的 PDF 已经有了就存成「名字 (1).pdf」，不覆盖），
+    不自动打开：小窗口里可以点「打开」「在文件夹中显示」，全都转好了几秒后它自己关掉；存不进源文件夹（只读之类）的可以「另存为…」。
+    可以多选（一次最多 100 个），程序没开着也行。安装版装好就有，免安装版在 ⋯ 菜单里打开「资源管理器右键菜单里的「转成 PDF」」；
     都可以在那里关掉（关掉后重新安装也不会再加回来）。原文件夹存不进去时（只读之类），转好的开成没保存的标签页。
-    Windows 11 上，安装时会问一次管理员权限（UAC）：同意了，「转成 PDF」就在右键菜单第一层；不同意、静默安装或免安装版，它在「显示更多选项」里。
+    Windows 11 上，第一次安装时会问一次管理员权限（UAC），用来把右键组件的签名证书装进这台电脑的「受信任的人」；同意了，「转成 PDF」就在右键菜单第一层。
+    不同意、静默安装或免安装版，它在「显示更多选项」里；程序会检查第一层的组件能不能启动，不能就自动用「显示更多选项」里的旧式菜单。卸载时会再问一次，把证书删掉。
   - 网页版只能转图片（Office、文本、网页的转换要靠本机的 Office 和 WebView2）。
 - **背景**（首页右下角「背景」、⋯ 菜单「换背景…」，或在首页空白处右键）：今日之诗（默认，布莱克原版插图，每天换一幅）；三幅水彩——玫瑰与新月、乡间小路、花边插页
   （和 Chrome 主题 [chrome-blake-theme](https://github.com/Riyel-Sinix/chrome-blake-theme) 同一套图）；素纸（不放画）；或者自己选一张图片（缩到长边 2560 存在本机）。
@@ -78,6 +80,7 @@
 | `src/js/organize.js` / `pages-worker.js` | 整理页面对话框；按页面清单重新生成文档，后台线程里用 pdf-lib 转页、加空白页、去掉副本带进来的重复书签 |
 | `src/js/merge.js` / `merge-worker.js` | 合并：列表、页码范围、挑页；后台线程里用 pdf-lib 加书签、旋转 |
 | `src/js/convert.js` / `convert-worker.js` | 转成 PDF：认文件类型、选项对话框、图片解码、把文本 / Markdown / CSV 排成网页；后台线程里用 pdf-lib 把图片拼成 PDF、修正打印出来的书签标题 |
+| `src/convert.html` / `src/js/convert-app.js` | 资源管理器右键「转成 PDF」的小窗口：只显示进度和结果，转好的存到源文件旁边，不开主窗口 |
 | `src/js/home.js` | 首页、最近打开、今日之诗 |
 | `src/js/backdrop.js` | 背景：今日之诗、水彩画、素纸、自己的图片（存进 IndexedDB）和选择框 |
 | `src/js/vines.js` | 页边藤蔓和 Clawd |
@@ -99,10 +102,13 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
 ```
 
 `npx tauri build` 先自动跑 `node tools/build-shell-menu.mjs`：编译右键组件 DLL（`src-tauri/shell-menu`），把稀疏包清单打成 `PDFViewer.ShellMenu.msix`，
-安装包把两样都放进安装文件夹的 `shell-menu\`。这个包没签名（发布者带微软规定的 OID），是 Windows 11 给「没签名的包」开的口子：
-登记要管理员，按微软的说法包会装给这台电脑的所有用户，微软建议只用来测试、不要大范围分发。所以只在安装时问一次，用户拒绝就退回旧式菜单；
-登记、去掉的结果记在 `%TEMP%\pdf-viewer-shell-menu.log`。只有改了 `AppxManifest.xml` 才要把 `identity.json` 的 version 加一，
-安装包看到登记的版本不同才会重新登记（再问一次管理员）；程序和 DLL 更新不用改它。
+再用自签名证书签名，安装包把 DLL、包和证书公钥（`PDFViewer.ShellMenu.cer`）都放进安装文件夹的 `shell-menu\`。
+没签名的包 Windows 不让它启动（1.3.1–1.4.0 用过「没签名的包」的口子，登记得上，但资源管理器创建命令时「拒绝访问」）。
+签名用的私钥不在仓库里：它在打包机器的「当前用户\个人」证书库里，`build-shell-menu.mjs` 按 `identity.json` 的 `signing_thumbprint` 找；
+备份在 `%USERPROFILE%\.pdf-viewer-signing\`（那里的 README.txt 写了怎么导入）。没有这张证书的机器打不了安装包。
+安装时：证书不在本机「受信任的人」里（或者还留着 1.3.1–1.4.0 的没签名的包）就用 UAC 运行 `--shell-setup-admin` 装证书、去掉旧包，
+再不用管理员地 `--add-shell-package` 把包登记给当前用户；卸载时 `--remove-shell-package`，再用 UAC 运行 `--shell-cleanup-admin` 删掉证书。
+结果记在 `%TEMP%\pdf-viewer-shell-menu.log`。只有改了 `AppxManifest.xml` 才要把 `identity.json` 的 version 加一；程序和 DLL 更新不用改它。
 
 - 只想在浏览器里看界面：`node tools/serve.mjs`，然后打开 http://127.0.0.1:8780/ （`/__test/` 下是 `.cache/test` 里的测试 PDF，用 `python -P tools/make-test-pdfs.py` 生成）。
 - 背景水彩：`python -P tools/make-backdrops.py [chrome-blake-theme 的 source 文件夹]`，从 Chrome 主题的原图裁掉白边、缩到长边 2560，再做选择框里的小图，输出到 `src/assets/backdrops/`。
@@ -112,7 +118,7 @@ npx tauri build         # 产物：src-tauri/target/release/pdf-viewer.exe 和 b
 - 自动化测试：设环境变量 `PDFVIEWER_TEST_OFFSCREEN=1`，窗口会开在屏幕外、不抢焦点。`node tools/desktop-smoke.mjs` 跑一遍桌面版（打开、合并、编辑、存盘、整理页面、签名、粘贴、关窗确认、背景），截图在 `.cache/shots/`。
 - 转换测试：`python -P tools/make-convert-tests.py` 在 `.cache/test/convert/` 生成各种格式的测试文件（要 Pillow、python-docx、openpyxl；PPT 用本机的 PowerPoint 生成，没装就跳过），
   再 `node tools/convert-smoke.mjs`（拖放转换、合成一份、拖进合并页、存盘、隐藏窗口有没有关掉）。本机没装 Office / WPS / LibreOffice 时 Office 那几项跳过。
-- 右键菜单测试：`node tools/shell-menu-smoke.mjs`（安装程序用的注册 / 删除、像多选那样同时启动好几个 `--convert`、同名不覆盖、存不进去时的退路、⋯ 菜单的开关）。
+- 右键菜单测试：`node tools/shell-menu-smoke.mjs`（安装程序用的注册 / 删除、像多选那样同时启动好几个 `--convert`：只开转换的小窗口、同名不覆盖、转好自己关掉；主窗口开着时不动它、存不进去时另存为、点「打开」在主窗口里开；⋯ 菜单的开关）。
   测试时程序把注册表写在单独的 `HKCU\Software\PDFViewerTest` 下、单实例也换了名字，不碰真正的右键菜单、不会转进用户正开着的窗口，测完删掉。
 - Windows 11 第一层右键菜单的测试：`node tools/build-shell-menu.mjs --test && node tools/shell-menu-e2e.mjs`（要 Windows 11、开开发者模式，先 `npx tauri build`）。
   用测试专用的包名和 CLSID 登记一个稀疏包，像资源管理器那样通过 COM 代理调「转成 PDF」，看程序收到的参数、它写的文件落没落在平常的位置；

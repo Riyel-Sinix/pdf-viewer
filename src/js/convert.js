@@ -1,4 +1,5 @@
-// 转成 PDF：图片、Office 文档、文本 / Markdown / 表格、网页 → PDF。转好的由 main.js 开成新标签页（还没保存），或者加进合并列表。
+// 转成 PDF：图片、Office 文档、文本 / Markdown / 表格、网页 → PDF。转好的由 main.js 开成新标签页（还没保存）、加进合并列表，
+// 或者由 convert-app.js（资源管理器右键「转成 PDF」的小窗口）存到源文件旁边。
 // - 图片：后台线程里用 pdf-lib 拼（convert-worker.js），JPEG、PNG 原样嵌入；别的格式先在画布上解码；TIFF、HEIC 由桌面版用 Windows 的 WIC 解码
 // - Office 文档（桌面版）：交给本机装的 Microsoft Office / WPS / LibreOffice，后台隐藏运行（src-tauri/src/office.ps1）
 // - 文本、Markdown、CSV、网页（桌面版）：拼成网页，在看不见、不跑脚本的 WebView2 窗口里打印成 PDF——标题变成书签，页脚有页码
@@ -424,8 +425,11 @@ function askOptions(items, opts) {
     return cur;
   });
 }
-// 进度：快的（一两张图片）一闪而过就不弹了
-function progress(total) {
+// 进度：快的（一两张图片）一闪而过就不弹了。report：自己显示进度文字（「转成 PDF」小窗口），不弹对话框
+function progress(total, report) {
+  const how = k => (k === 'word' || k === 'excel' || k === 'powerpoint' ? '用本机的 Office 转换' : k === 'html' ? '打印网页' : isImageKind(k) ? '放进图片' : '排版');
+  const stepText = (i, it) => `${total > 1 ? `第 ${i + 1} / ${total} 个：` : ''}${how(it.kind)}「${it.entry.name}」…`;
+  if (report) return { step: (i, it) => report(stepText(i, it), i), stage: t => report(t, total), close() {} };
   let shown = false, text = '';
   const show = () => {
     shown = true;
@@ -436,9 +440,8 @@ function progress(total) {
   };
   const timer = setTimeout(show, 300);
   const set = t => { text = t; const s = document.getElementById('cvStage'); if (shown && s) s.textContent = t; };
-  const how = k => (k === 'word' || k === 'excel' || k === 'powerpoint' ? '用本机的 Office 转换' : k === 'html' ? '打印网页' : isImageKind(k) ? '放进图片' : '排版');
   return {
-    step: (i, it) => set(`${total > 1 ? `第 ${i + 1} / ${total} 个：` : ''}${how(it.kind)}「${it.entry.name}」…`),
+    step: (i, it) => set(stepText(i, it)),
     stage: set,
     close() { clearTimeout(timer); if (shown) closeDialog(null); },
   };
@@ -447,13 +450,14 @@ function progress(total) {
 /* ---------- 一批文件 → PDF ----------
  * entries：{ name, path, size, read() }。ask：有图片、或者不止一个文件时，先问纸张、边距、要不要合成一份；
  * combine：不问的时候要不要合成一份（加进合并列表时是 false）。文件按名字排序（见 byName）。
+ * report(text, done)：自己显示进度（text 是现在在做什么，done 是已经转完几个），不弹进度对话框。
  * 返回 { results: [{ name, bytes, dir, sources, entry }], failed: [{ name, error }] }；在对话框里取消返回 null */
 const collator = new Intl.Collator('zh-CN', { numeric: true });
 const hanFirst = s => (/^[㐀-鿿豈-﫿]/.test(s) ? 1 : 0);
 // 和资源管理器一样：数字、字母开头的在前，汉字开头的在后（按拼音）；数字按大小比（scan2 在 scan10 前面）
 const byName = (a, b) => hanFirst(a) - hanFirst(b) || collator.compare(a, b);
 
-export async function convertEntries(entries, { ask = true, combine = null } = {}) {
+export async function convertEntries(entries, { ask = true, combine = null, report = null } = {}) {
   const items = entries.map(entry => ({ entry, kind: convertKind(entry.name) })).filter(x => x.kind);
   items.sort((a, b) => byName(a.entry.name, b.entry.name));
   const results = [], failed = [];
@@ -465,7 +469,7 @@ export async function convertEntries(entries, { ask = true, combine = null } = {
     if (!opts) return null;
   }
   const dirOf = en => (en.path ? platform.dirname(en.path) : '');
-  const prog = progress(items.length);
+  const prog = progress(items.length, report);
   try {
     if (opts.combine && items.length > 1) {
       // 合成一份：连在一起的图片拼成一段，文档各自一段，最后装订起来（混着放的时候，每个文件一个书签）

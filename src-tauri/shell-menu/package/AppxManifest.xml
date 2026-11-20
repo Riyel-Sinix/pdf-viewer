@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- PDF 查看器在 Windows 11 右键菜单第一层的「转成 PDF」：稀疏包。程序本身不在包里，在 ExternalLocation（安装文件夹），
      包里只有这份清单和图标；它把 shell-menu\pdf_viewer_shell.dll（src-tauri/shell-menu）登记成资源管理器的 IExplorerCommand。
-     tools/build-shell-menu.mjs 按 identity.json 填好 {NAME}、{PUBLISHER}、{VERSION}、{CLSID} 后用 makeappx 打包。没有签名：Publisher 带微软规定的 OID，
-     安装时 Add-AppxPackage -AllowUnsigned（要管理员，见 src-tauri/windows/shell-menu.ps1） -->
+     tools/build-shell-menu.mjs 按 identity.json 填好 {NAME}、{PUBLISHER}、{VERSION}、{CLSID} 后用 makeappx 打包、用自签名证书签名。
+     安装时先把证书装进本机「受信任的人」（要管理员），包再按用户登记（src/shell_menu.rs）。没签名的包 Windows 不让它启动 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"

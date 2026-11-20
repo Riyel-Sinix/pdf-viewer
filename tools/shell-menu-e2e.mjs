@@ -3,15 +3,16 @@
 // 1. 像资源管理器那样通过 COM 代理（dllhost）调「转成 PDF」：看假程序（probe，装成 pdf-viewer.exe）收到的参数、
 //    它写的 AppData 和注册表是不是落在平常的位置（没被重定向进包的文件夹）。
 // 2. 装新版时：被 COM 代理占着的旧 DLL 能改名挪开，新的装得进去（安装包的 hooks.nsh 就这么做）。
-// 3. 换上真正的程序（测试模式），试安装包用的 --shell-package-needed、--register-shell-menu、--add-shell-package、--remove-shell-package：
-//    包登记好了就不再要、旧式菜单去掉；不用管理员去掉包，COM 代理随之退出，DLL 删得掉。
+// 3. 换上真正的程序（测试模式），试安装包用的 --shell-setup-needs-admin、--register-shell-menu、--add-shell-package、--remove-shell-package：
+//    包登记好了就不再要、旧式菜单去掉；不用管理员去掉包，COM 代理随之退出，DLL 删得掉；
+//    包登记上了却创建不了命令（用户电脑上没签名的包就这样）时退回旧式菜单；证书受信任时 --add-shell-package 不用管理员换上签过名的包。
 // 不碰真正的程序设置和用户的右键菜单（注册表只写测试专用的 HKCU\Software\PDFViewerTest）；测完去掉登记、停掉代理进程、删掉临时文件。
-// 需要 Windows 11 和开发者模式。真正的安装方式（没签名的 .msix + 管理员确认）只能用安装包测。
+// 需要 Windows 11、开发者模式和打包机器上的签名证书。要管理员的两步（--shell-setup-admin、--shell-cleanup-admin）只能用安装包测。
 //   node tools/build-shell-menu.mjs --test && node tools/shell-menu-e2e.mjs [程序路径，默认 src-tauri/target/release/pdf-viewer.exe]
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { IDENTITY, OUT, packMsix, stagePackage } from './build-shell-menu.mjs';
+import { IDENTITY, OUT, packMsix, signMsix, stagePackage } from './build-shell-menu.mjs';
 
 const root = path.dirname(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')));
 const E = path.join(root, '.cache', 'shell-e2e'), APP = path.join(E, 'PDF 查看器'), PKG = path.join(E, 'pkg'), FILES = path.join(E, 'files'), DATA = path.join(E, 'data');
@@ -91,12 +92,17 @@ try {
     console.log(`SKIP  安装包用的开关（没找到程序 ${realExe}，先 npx tauri build）`);
   } else {
     fs.copyFileSync(realExe, path.join(APP, 'pdf-viewer.exe'));
-    // 测试包的 msix，按正式的那样没签名（发布者带 OID）：--add-shell-package 不用管理员时应该被拒（要管理员），也不会登记上任何东西
+    // 测试包的 msix，和正式的一样用打包机器上的证书签名（测试包的发布者也是证书的 CN）；证书公钥放在旁边，程序靠它判断受不受信任
     const stage = path.join(E, 'stage');
-    stagePackage(stage, { test: true, publisher: IDENTITY.publisher.replace(/^CN=[^,]+/, 'CN=PDF Viewer E2E Test') });
+    stagePackage(stage, { test: true });
     packMsix(stage, path.join(APP, 'shell-menu', 'PDFViewer.ShellMenu.msix'));
+    signMsix(path.join(APP, 'shell-menu', 'PDFViewer.ShellMenu.msix'));
+    fs.copyFileSync(path.join(root, 'src-tauri', 'shell-menu', 'package', IDENTITY.certificate), path.join(APP, 'shell-menu', IDENTITY.certificate));
+    // 证书在不在本机「受信任的人」里决定后面几项该是什么结果（测试不改它：装、删都要管理员）
+    const trusted = ps(`@(Get-ChildItem Cert:\\LocalMachine\\TrustedPeople | Where-Object Thumbprint -eq '${IDENTITY.signing_thumbprint}').Count`).stdout.trim() === '1';
+    console.log(`INFO  签名证书${trusted ? '已经' : '还没'}装进本机「受信任的人」`);
 
-    check('包登记好了（这一版、指向安装文件夹）：--shell-package-needed 说不用再登记', app('--shell-package-needed') === 1);
+    check(`--shell-setup-needs-admin：证书${trusted ? '受信任、没有没签名的旧包，不问管理员' : '还没受信任，要问管理员'}`, app('--shell-setup-needs-admin') === (trusted ? 1 : 0));
     ps(`New-Item -Path '${TEST_VERB}\\command' -Force | Out-Null`);
     const regStatus = app('--register-shell-menu');
     const classicLeft = ps(`Test-Path '${TEST_VERB}'`).stdout.trim();
@@ -111,18 +117,44 @@ try {
       JSON.stringify({ removeStatus, left, heldAfter, err: deleted ? '' : err }));
     fs.copyFileSync(path.join(OUT, 'release', 'pdf_viewer_shell.dll'), DLL);
 
-    // 这台电脑上「要不要登记」的答案：Windows 11、管理员账号（UAC 后还是自己）就要
-    const isAdmin = /S-1-5-32-544/.test(spawnSync(path.join(process.env.SystemRoot, 'System32', 'whoami.exe'), ['/groups', '/fo', 'csv'], { encoding: 'utf8' }).stdout || '');
-    const needed = app('--shell-package-needed');
-    check(`没登记时：--shell-package-needed ${isAdmin ? '说要登记（管理员账号）' : '说不用（标准用户，UAC 会换成别的账号）'}`, needed === (isAdmin ? 0 : 1), JSON.stringify({ needed, isAdmin }));
-    fs.writeFileSync(path.join(DATA, 'shell-menu-off'), 'x');
-    check('用户关掉过右键菜单：--shell-package-needed 说不用（不弹管理员确认）', app('--shell-package-needed') === 1);
-    fs.rmSync(path.join(DATA, 'shell-menu-off'));
+    // 包登记上了却创建不了命令（1.3.1–1.4.0 没签名的包在用户电脑上就是这样：「拒绝访问」，第一层什么都没有）：
+    // 模拟：包照样登记，但清单里换成别的 CLSID，程序要的那个就创建不了。--register-shell-menu 要退回旧式菜单，不然两种都没有。
+    // （改成指向不存在的 DLL 模拟不了：同一个包名重新登记时 Windows 还用原来的 DLL）
+    const broken = path.join(E, 'pkg-broken');
+    stagePackage(broken, { test: true });
+    const bm = path.join(broken, 'AppxManifest.xml');
+    fs.writeFileSync(bm, fs.readFileSync(bm, 'utf8').replaceAll(IDENTITY.test_clsid, '5C2E1F0A-7B3D-4E6A-9C8B-1D2F3A4B5C6D'));
+    const breg = ps(`Add-AppxPackage -Register '${bm}' -ExternalLocation '${APP}'`);
+    ps(`Remove-Item -Path '${TEST_VERB}' -Recurse -ErrorAction SilentlyContinue`);
+    const brokenStatus = app('--register-shell-menu');
+    const classicBack = ps(`Test-Path '${TEST_VERB}'`).stdout.trim();
+    check('包登记上了但创建不了命令：--register-shell-menu 退回旧式菜单', breg.status === 0 && registered() === '1' && brokenStatus === 0 && classicBack === 'True',
+      JSON.stringify({ breg: breg.status, registered: registered(), brokenStatus, classicBack }));
 
-    // 不用管理员登记没签名、带可执行内容的包会被拒（0x80073D2B）；拒在这一步说明 msix 和安装文件夹的路径（空格、中文）都认出来了
-    const addStatus = app('--add-shell-package');
-    const log = fs.existsSync(path.join(DATA, 'pdf-viewer-shell-menu.log')) ? fs.readFileSync(path.join(DATA, 'pdf-viewer-shell-menu.log'), 'utf8').trim().split('\n').pop() : '';
-    check('不用管理员 --add-shell-package：被拒（要管理员）、记了日志，也没登记上', addStatus === 1 && /0x80073d2b/i.test(log) && registered() === '0', JSON.stringify({ addStatus, log }));
+    if (!trusted) {
+      console.log('SKIP  --add-shell-package 登记签过名的包（要先用管理员把证书装进本机「受信任的人」，装一次安装包就有）');
+    } else {
+      // 装新版时的样子：--add-shell-package 换上签过名的包（不用管理员），命令能创建，--register-shell-menu 再把旧式菜单去掉
+      const addStatus = app('--add-shell-package');
+      const info = JSON.parse(ps(`Get-AppxPackage -Name '${NAME}' | Select-Object SignatureKind, IsDevelopmentMode, Status | ConvertTo-Json -Compress`).stdout.trim() || 'null');
+      const reg2 = app('--register-shell-menu');
+      const classicGone = ps(`Test-Path '${TEST_VERB}'`).stdout.trim();
+      const log = fs.existsSync(path.join(DATA, 'pdf-viewer-shell-menu.log')) ? fs.readFileSync(path.join(DATA, 'pdf-viewer-shell-menu.log'), 'utf8').trim().split('\n').pop() : '';
+      check('--add-shell-package 不用管理员换上签过名的包，第一层能用了，旧式菜单去掉', addStatus === 0 && info?.SignatureKind !== 'None' && !info?.IsDevelopmentMode && reg2 === 0 && classicGone === 'False',
+        JSON.stringify({ addStatus, info, reg2, classicGone, log }));
+      check('包登记好了、能用：--add-shell-package 什么都不做', app('--add-shell-package') === 0 && registered() === '1');
+      const r2 = spawnSync(path.join(OUT, 'release', 'e2e.exe'), [jpg, '--', pdf], { encoding: 'utf8', timeout: 60000 });
+      check('签过名的包：通过 COM 代理创建命令', /"title":"转成 PDF"/.test(r2.stdout || ''), (r2.stdout || '').trim().slice(0, 200));
+      unregister();
+      freeDll();
+    }
+    unregister();
+    freeDll();
+
+    fs.writeFileSync(path.join(DATA, 'shell-menu-off'), 'x');
+    check('用户关掉过右键菜单：不问管理员，--add-shell-package 也不登记', app('--shell-setup-needs-admin') === 1 && app('--add-shell-package') === 0 && registered() === '0');
+    fs.rmSync(path.join(DATA, 'shell-menu-off'));
+    check(`卸载时：--shell-cleanup-needs-admin ${trusted ? '要问管理员（把证书删掉）' : '不用问'}`, app('--shell-cleanup-needs-admin') === (trusted ? 0 : 1));
   }
 } catch (e) {
   check('右键组件端到端测试本身', false, e.message);
