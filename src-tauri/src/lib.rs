@@ -103,6 +103,18 @@ async fn open_in_main(app: AppHandle, state: State<'_, PendingFiles>, paths: Vec
     show_window(&app, MAIN, true).map_err(|e| e.to_string())
 }
 
+/// 程序版本（检查新版本时比较）；test：自动化测试时不联网检查
+#[derive(serde::Serialize)]
+struct AppInfo {
+    version: &'static str,
+    test: bool,
+}
+
+#[tauri::command]
+fn app_info() -> AppInfo {
+    AppInfo { version: env!("CARGO_PKG_VERSION"), test: offscreen() }
+}
+
 const MAIN: &str = "main";
 const CONVERT: &str = "convert";
 
@@ -369,6 +381,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             take_pending_files,
             open_in_main,
+            app_info,
             shell_menu_status,
             set_shell_menu,
             read_file,

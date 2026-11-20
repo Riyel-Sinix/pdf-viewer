@@ -81,7 +81,7 @@ export function askPassword(name, wrong = false) {
 const toasts = $('#toasts');
 export function toast(text, { kind = 'info', actions = [], ms = 4200 } = {}) {
   const el = document.createElement('div');
-  el.className = `toast ${kind}`;
+  el.className = `toast ${kind}${actions.length > 2 ? ' wide' : ''}`;
   el.innerHTML = `<span class="ic">${icon(kind === 'err' ? 'alert' : kind === 'ok' ? 'ok' : 'feather', 18)}</span><span class="tx">${esc(text)}</span>`
     + (actions.length ? `<span class="acts2">${actions.map((a, i) => `<button data-i="${i}">${esc(a.label)}</button>`).join('')}</span>` : '');
   const close = () => { if (!el.isConnected) return; el.classList.add('out'); setTimeout(() => el.remove(), 260); };

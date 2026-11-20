@@ -14,6 +14,7 @@ import { EditBar } from './editbar.js';
 import { Organizer, organizerOpen, buildPages } from './organize.js';
 import { signatureDialog } from './sign.js';
 import { convertEntries, convertFilters, canConvert, convertError } from './convert.js';
+import * as update from './update.js';
 
 /* ---------- 图标填进静态结构 ---------- */
 $$('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.ic, +el.dataset.sz || 18)));
@@ -643,6 +644,7 @@ function moreItems() {
     platform.isDesktop ? { label: '资源管理器右键菜单里的「转成 PDF」', icon: 'convert', on: !!shellMenuState?.current, act: () => toggleShellMenu() } : null,
     { label: '文档属性', icon: 'info', kbd: 'Ctrl+D', disabled: !t, act: () => reader.showProperties() },
     t?.path && platform.isDesktop ? { label: '在文件夹中显示', icon: 'folder', act: () => platform.revealInFolder(t.path) } : null,
+    platform.isDesktop ? { label: '检查新版本…', icon: 'feather', act: () => update.checkNow() } : null,
     '-',
     { label: '关闭文档', icon: 'close', kbd: 'Ctrl+W', disabled: !activeDoc(), act: () => closeActive() },
   ];
@@ -925,6 +927,7 @@ async function takePending() {
   try { await platform.onFilesPending(takePending); } catch (e) { console.warn(e); }
   takePending();
   platform.shellMenu.status().then(s => { shellMenuState = s; }).catch(() => {});
+  update.checkLater();
   // 默认背景「今日之诗」每天零点（北京时间）换一幅
   setInterval(() => renderBackdrop(), 10 * 60e3);
 })();

@@ -94,6 +94,8 @@ export async function takePendingFiles() {
   const p = await invoke('take_pending_files');
   return { open: p.open.map(entryFromPath), convert: p.convert.map(entryFromPath) };
 }
+// 程序版本；test：自动化测试（窗口在屏幕外），这时不联网检查新版本
+export async function appInfo() { return isDesktop ? invoke('app_info') : null; }
 // 在主窗口里打开（主窗口没开着就开一个）
 export async function openInMain(paths) { if (isDesktop && paths.length) await invoke('open_in_main', { paths }); }
 // 先订上通知再取第一批：中间转过来的不会漏

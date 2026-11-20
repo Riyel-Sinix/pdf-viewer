@@ -609,6 +609,10 @@ dialog.bgdlg::backdrop{background:rgba(30,20,10,.08);backdrop-filter:none}
 .toast.err .ic{color:var(--red)}
 .toast.ok .ic{color:var(--green)}
 .toast .tx{min-width:0;overflow-wrap:anywhere}
+/* 按钮多、放不下时换到下一行，不把文字挤成一列 */
+.toast.wide{flex-wrap:wrap;row-gap:6px}
+.toast.wide .tx{flex:1 1 14em}
+.toast.wide .acts2{margin-left:auto}
 .toast .acts2{display:flex;gap:4px;flex:0 0 auto}
 .toast .acts2 button{height:28px;padding:0 10px;border-radius:var(--pill);font-size:13px;color:var(--accent-ink);border:1.2px solid var(--line)}
 .toast .acts2 button:hover{background:var(--accent-soft)}
